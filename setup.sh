@@ -3,6 +3,36 @@
 echo "FPS Game Setup Script"
 echo "===================="
 
+# Install required dependencies for GLFW on Linux
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    echo "Installing X11 development libraries for GLFW..."
+    
+    # Check if we're on a Debian/Ubuntu system
+    if command -v apt-get &> /dev/null; then
+        sudo apt-get update
+        sudo apt-get install -y libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev
+    # Check if we're on a Red Hat/Fedora system
+    elif command -v yum &> /dev/null; then
+        sudo yum install -y libX11-devel libXrandr-devel libXinerama-devel libXcursor-devel libXi-devel mesa-libGL-devel
+    elif command -v dnf &> /dev/null; then
+        sudo dnf install -y libX11-devel libXrandr-devel libXinerama-devel libXcursor-devel libXi-devel mesa-libGL-devel
+    # Check if we're on an Arch system
+    elif command -v pacman &> /dev/null; then
+        sudo pacman -S --noconfirm libx11 libxrandr libxinerama libxcursor libxi mesa
+    else
+        echo "Warning: Unknown package manager. Please install X11 development libraries manually."
+        echo "Required packages: libx11-dev, libxrandr-dev, libxinerama-dev, libxcursor-dev, libxi-dev, libgl1-mesa-dev"
+    fi
+    
+    if [ $? -eq 0 ]; then
+        echo "✓ X11 development libraries installed successfully"
+    else
+        echo "✗ Failed to install X11 development libraries"
+        echo "Please install them manually and run this script again"
+        exit 1
+    fi
+fi
+
 # Check if raylib directory exists
 if [ ! -d "raylib" ]; then
     echo "Raylib not found. Cloning raylib repository..."
