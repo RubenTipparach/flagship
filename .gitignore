@@ -1,0 +1,27 @@
+# Raylib dependency (downloaded by setup.sh)
+raylib/
+
+# Build outputs
+fps_game
+fps_game.exe
+*.o
+*.a
+*.so
+*.dll
+*.dylib
+
+# IDE files
+.vscode/
+.vs/
+*.vcxproj*
+*.sln
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
+
+# Debug files
+*.pdb
+*.ilk

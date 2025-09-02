@@ -1,0 +1,34 @@
+# Makefile for Windows (MinGW/MSYS2)
+CC = gcc
+CFLAGS = -Wall -Wno-missing-braces -Wunused-result -std=c99 -O2
+INCLUDES = -Iraylib/src -I.
+LIBS = -Lraylib/src -lraylib -lopengl32 -lgdi32 -lwinmm -lkernel32 -lshell32 -luser32
+
+TARGET = fps_game.exe
+SOURCES = fps_game.c
+
+# Default target
+all: $(TARGET)
+
+# Build the game
+$(TARGET): $(SOURCES) raylib/src/libraylib.a
+	$(CC) $(CFLAGS) $(INCLUDES) -o $(TARGET) $(SOURCES) $(LIBS)
+
+# Build raylib if needed
+raylib/src/libraylib.a:
+	@echo "Raylib not found. Please run setup.sh first to download and build raylib."
+	@exit 1
+
+# Clean build files
+clean:
+	del /f $(TARGET) 2>nul || echo "Nothing to clean"
+
+# Build and run
+run: $(TARGET)
+	./$(TARGET)
+
+# Setup raylib (requires bash/MSYS2)
+setup:
+	bash setup.sh
+
+.PHONY: all clean run setup
