@@ -67,4 +67,53 @@ typedef struct {
     int height;
 } Maze;
 
+// Terrain data structure
+#define TERRAIN_SIZE 1024
+typedef struct {
+    float heights[TERRAIN_SIZE][TERRAIN_SIZE];
+    int size;
+    Model terrainModel;
+    Texture2D heightTexture;
+    bool loaded;
+    float heightMultiplier;  // Dynamic height scaling
+    bool needsRebuild;       // Flag to rebuild mesh
+} TerrainData;
+
+// Scene types
+typedef enum {
+    SCENE_MAZE,
+    SCENE_TERRAIN
+} SceneType;
+
+// Forward declarations
+typedef struct Scene Scene;
+
+// Scene function pointers
+typedef void (*SceneInitFunc)(Scene* scene, LightingSystem* lighting, GraphicsConfig* gfxConfig);
+typedef void (*SceneUpdateFunc)(Scene* scene, float deltaTime, Camera3D* camera);
+typedef void (*SceneRenderFunc)(Scene* scene, Camera3D camera, GraphicsConfig* gfxConfig);
+typedef void (*SceneCleanupFunc)(Scene* scene);
+
+// Scene structure
+typedef struct Scene {
+    SceneType type;
+    char name[64];
+    bool initialized;
+    void* sceneData;  // Scene-specific data
+    
+    SceneInitFunc init;
+    SceneUpdateFunc update;
+    SceneRenderFunc render;
+    SceneCleanupFunc cleanup;
+} Scene;
+
+// Scene manager
+#define MAX_SCENES 10
+typedef struct {
+    Scene scenes[MAX_SCENES];
+    int sceneCount;
+    int currentSceneIndex;
+    Scene* currentScene;
+} SceneManager;
+
 #endif // GAME_TYPES_H

@@ -19,4 +19,7 @@ Mesh GenMeshWallWithAdvancedLighting(float width, float height, int resX, int re
 // Generate a cube mesh for maze walls with vertex colors and lighting
 Mesh GenMeshMazeWallCube(float size, const LightingSystem* lighting, const GraphicsConfig* config);
 
+// Generate terrain mesh from height map with vertex colors based on height
+Mesh GenMeshTerrainFromHeightMap(const TerrainData* terrain, float scale, float heightScale);
+
 #endif // MESH_GENERATION_H

@@ -14,7 +14,7 @@ else
 endif
 
 TARGET = fps_game
-SOURCES = src/fps_game.c src/lighting.c src/mesh_generation.c src/mesh_generation_advanced.c src/rendering.c src/maze.c
+SOURCES = src/fps_game.c src/lighting.c src/mesh_generation.c src/mesh_generation_advanced.c src/rendering.c src/maze.c src/scene_manager.c src/terrain_mesh.c
 
 # Default target
 all: $(TARGET)
@@ -47,4 +47,19 @@ run: $(TARGET)
 setup:
 	./setup.sh
 
-.PHONY: all gles clean run setup
+# Build height map generator tool
+heightmap-tool: tools/heightmap_generator.c raylib/src/libraylib.a
+	@echo "Building height map generator tool..."
+	@$(CC) $(CFLAGS) $(INCLUDES) -o tools/heightmap_generator tools/heightmap_generator.c $(LIBS_GL) 2>/dev/null || \
+	(echo "OpenGL failed, trying OpenGL ES..." && \
+	 $(CC) $(CFLAGS) $(INCLUDES) -DGRAPHICS_API_OPENGL_ES2 -o tools/heightmap_generator tools/heightmap_generator.c $(LIBS_GLES))
+
+# Generate height map
+generate-heightmap: heightmap-tool
+	@echo "Generating height map..."
+	@cd tools && ./heightmap_generator
+	@echo "Moving height map to game directory..."
+	@mv tools/heightmap.png ./heightmap.png
+	@echo "Height map generated and ready for use!"
+
+.PHONY: all gles clean run setup heightmap-tool generate-heightmap

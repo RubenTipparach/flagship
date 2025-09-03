@@ -10,6 +10,7 @@
 #include "mesh_generation.h"
 #include "rendering.h"
 #include "maze.h"
+#include "scene_manager.h"
 
 int main(void)
 {
@@ -64,40 +65,31 @@ int main(void)
     }
     
     Camera3D camera = { 0 };
-    camera.position = (Vector3){ 0.0f, 2.5f, 10.0f };  // Move camera back and up to 2.5 units above ground
-    camera.target = (Vector3){ 0.0f, 0.0f, 0.0f };     // Look toward center
+    camera.position = (Vector3){ 0.0f, 10.0f, 20.0f };  // Start above smaller terrain
+    camera.target = (Vector3){ 0.0f, 0.0f, 0.0f };      // Look toward terrain center
     camera.up = (Vector3){ 0.0f, 1.0f, 0.0f };
     camera.fovy = 60.0f;
     camera.projection = CAMERA_PERSPECTIVE;
     
     srand(time(NULL));
     
-    // Generate basic 3D models - use simple mesh generation like the working test cubes
-    Model cubeModel = LoadModelFromMesh(GenMeshCube(CUBE_SIZE, CUBE_SIZE, CUBE_SIZE));
-    Model sphereModel = LoadModelFromMesh(GenMeshSphere(CUBE_SIZE/2.0f, 16, 16));
-    Model cylinderModel = LoadModelFromMesh(GenMeshCylinder(CUBE_SIZE/2.0f, CUBE_SIZE, 8));
+    // Initialize scene manager
+    SceneManager sceneManager = InitSceneManager();
     
-    // Generate custom floor and wall geometry - start with basic versions
-    Mesh floorMesh = GenMeshFloorWithColors(WORLD_SIZE * 2, WORLD_SIZE * 2, FLOOR_SEGMENTS, FLOOR_SEGMENTS);
-    Model floorModel = LoadModelFromMesh(floorMesh);
+    // Create and add scenes
+    Scene mazeScene = CreateMazeScene();
+    Scene terrainScene = CreateTerrainScene();
     
-    // Generate wall models for boundaries  
-    Mesh wallMesh = GenMeshWallWithColors(WORLD_SIZE * 2, WALL_HEIGHT, 40, 10);
-    Model wallModel = LoadModelFromMesh(wallMesh);
+    AddScene(&sceneManager, mazeScene);
+    AddScene(&sceneManager, terrainScene);
     
-    // Advanced lighting meshes will be generated on demand
-    Mesh advancedFloorMesh = {0};
-    Model advancedFloorModel = {0};
-    Mesh advancedWallMesh = {0};
-    Model advancedWallModel = {0};
-    bool advancedMeshesGenerated = false;
+    // Start with maze scene
+    SwitchScene(&sceneManager, 0);
     
-    // Load ASCII maze
-    Maze maze = LoadMazeFromFile("maze.txt");
-    
-    // Generate maze wall mesh with vertex colors and lighting
-    Mesh mazeWallMesh = GenMeshMazeWallCube(10.0f, &lighting, &gfxConfig);
-    Model mazeWallModel = LoadModelFromMesh(mazeWallMesh);
+    // Initialize current scene
+    if (sceneManager.currentScene && sceneManager.currentScene->init) {
+        sceneManager.currentScene->init(sceneManager.currentScene, &lighting, &gfxConfig);
+    }
     
     bool cursorLocked = false;
     Vector2 mousePos = {0};
@@ -128,6 +120,23 @@ int main(void)
             }
         }
         
+        // Scene switching controls
+        if (IsKeyPressed(KEY_ONE))
+        {
+            SwitchScene(&sceneManager, 0);
+            if (sceneManager.currentScene && sceneManager.currentScene->init) {
+                sceneManager.currentScene->init(sceneManager.currentScene, &lighting, &gfxConfig);
+            }
+        }
+        
+        if (IsKeyPressed(KEY_TWO))
+        {
+            SwitchScene(&sceneManager, 1);
+            if (sceneManager.currentScene && sceneManager.currentScene->init) {
+                sceneManager.currentScene->init(sceneManager.currentScene, &lighting, &gfxConfig);
+            }
+        }
+        
         // Graphics config controls
         if (IsKeyPressed(KEY_F1))
         {
@@ -153,18 +162,6 @@ int main(void)
         {
             gfxConfig.advancedShadingEnabled = !gfxConfig.advancedShadingEnabled;
             TraceLog(LOG_INFO, "Advanced Shading: %s", gfxConfig.advancedShadingEnabled ? "ON" : "OFF");
-            
-            // Regenerate meshes when shading mode changes
-            if (gfxConfig.advancedShadingEnabled && !advancedMeshesGenerated) {
-                // Generate advanced lighting meshes
-                advancedFloorMesh = GenMeshFloorWithAdvancedLighting(WORLD_SIZE * 2, WORLD_SIZE * 2, FLOOR_SEGMENTS, FLOOR_SEGMENTS, &lighting, &gfxConfig);
-                advancedFloorModel = LoadModelFromMesh(advancedFloorMesh);
-                
-                advancedWallMesh = GenMeshWallWithAdvancedLighting(WORLD_SIZE * 2, WALL_HEIGHT, 40, 10, &lighting, &gfxConfig);
-                advancedWallModel = LoadModelFromMesh(advancedWallMesh);
-                
-                advancedMeshesGenerated = true;
-            }
         }
         
         if (IsKeyPressed(KEY_F5))
@@ -176,6 +173,9 @@ int main(void)
         
         // Update lighting system
         UpdateLightingSystem(&lighting, deltaTime);
+        
+        // Update current scene
+        UpdateCurrentScene(&sceneManager, deltaTime, &camera);
         
         if (cursorLocked)
         {
@@ -223,10 +223,11 @@ int main(void)
             camera.target = Vector3Add(camera.target, moveVector);
         }
         
-        // Floor collision detection - prevent falling through
-        if (camera.position.y < 2.5f) {
-            camera.position.y = 2.5f;
-            camera.target.y = camera.target.y + (2.5f - (camera.position.y - (camera.target.y - camera.position.y)));
+        // Floor collision detection - prevent falling too far underground
+        float minHeight = -2.0f; // Allow going below sea level but not too far
+        if (camera.position.y < minHeight) {
+            camera.position.y = minHeight;
+            camera.target.y = camera.target.y + (minHeight - (camera.position.y - (camera.target.y - camera.position.y)));
         }
         
         BeginDrawing();
@@ -238,37 +239,8 @@ int main(void)
         // Draw all lights in the lighting system
         DrawLights(&lighting);
         
-        // Draw custom floor with appropriate lighting
-        if (gfxConfig.advancedShadingEnabled && advancedMeshesGenerated) {
-            DrawModel(advancedFloorModel, (Vector3){ 0.0f, 0.0f, 0.0f }, 1.0f, WHITE);
-        } else {
-            DrawModel(floorModel, (Vector3){ 0.0f, 0.0f, 0.0f }, 1.0f, WHITE);
-        }
-        
-        // Draw maze walls from ASCII data
-        float cellSize = 10.0f; // Size of each maze cell
-        
-        // Calculate maze offset to center it
-        float mazeStartX = -(maze.width * cellSize) / 2.0f;
-        float mazeStartZ = -(maze.height * cellSize) / 2.0f;
-        
-        for (int row = 0; row < maze.height; row++) {
-            for (int col = 0; col < maze.width; col++) {
-                if (maze.data[row][col] == '#') {
-                    // Calculate wall position - walls should sit on the floor
-                    float wallX = mazeStartX + col * cellSize;
-                    float wallZ = mazeStartZ + row * cellSize;
-                    float wallY = WALL_HEIGHT / 2.0f; // Center the wall vertically, bottom touches floor at y=0
-                    
-                    // Draw wall block using custom mesh with vertex colors and lighting
-                    Vector3 wallPos = (Vector3){ wallX, wallY, wallZ };
-                    DrawModel(mazeWallModel, wallPos, 1.0f, WHITE);
-                    if (gfxConfig.highQualityRendering) {
-                        DrawCubeWiresThick(wallPos, cellSize, WALL_HEIGHT, cellSize, BLACK, &gfxConfig);
-                    }
-                }
-            }
-        }
+        // Render current scene
+        RenderCurrentScene(&sceneManager, camera, &gfxConfig);
         
         DrawGrid(100, 1.0f);
         
@@ -281,48 +253,46 @@ int main(void)
         else
             DrawText("TAB to lock cursor for mouse look", 10, 50, 16, DARKGRAY);
         
-        DrawText("F1: AA, F2: Wireframe, F3: Quality, F4: Shading, F5: Specular", 10, 70, 14, DARKGRAY);
+        DrawText("1: Maze Scene, 2: Terrain Scene", 10, 70, 16, DARKGRAY);
+        DrawText("+/-: Terrain Height (in Terrain Scene)", 10, 90, 16, DARKGRAY);
+        DrawText("F1: AA, F2: Wireframe, F3: Quality, F4: Shading, F5: Specular", 10, 110, 14, DARKGRAY);
+        
+        // Display current scene
+        if (sceneManager.currentScene) {
+            char sceneText[100];
+            sprintf(sceneText, "Current Scene: %s", sceneManager.currentScene->name);
+            DrawText(sceneText, 10, 130, 16, BLUE);
+        }
         
         // Display player coordinates and debug info
         char coordText[200];
         sprintf(coordText, "Position: X=%.1f Y=%.1f Z=%.1f", 
             camera.position.x, camera.position.y, camera.position.z);
-        DrawText(coordText, 10, 90, 16, DARKGREEN);
+        DrawText(coordText, 10, 150, 16, DARKGREEN);
         
         char debugText[200];
         sprintf(debugText, "Target: X=%.1f Y=%.1f Z=%.1f", 
             camera.target.x, camera.target.y, camera.target.z);
-        DrawText(debugText, 10, 110, 16, DARKGREEN);
+        DrawText(debugText, 10, 170, 16, DARKGREEN);
         
         sprintf(debugText, "Graphics: AA:%s Shading:%s Specular:%.1f Lights:%d", 
             gfxConfig.antialiasingEnabled ? "ON" : "OFF",
             gfxConfig.advancedShadingEnabled ? "ADV" : "SIM",
             gfxConfig.specularStrength,
             lighting.lightCount);
-        DrawText(debugText, 10, 130, 16, DARKGREEN);
+        DrawText(debugText, 10, 190, 16, DARKGREEN);
         
         sprintf(debugText, "Cursor: %s, Yaw=%.2f, Pitch=%.2f", 
             cursorLocked ? "LOCKED" : "FREE", yaw * 180.0f / PI, pitch * 180.0f / PI);
-        DrawText(debugText, 10, 150, 16, DARKGREEN);
+        DrawText(debugText, 10, 210, 16, DARKGREEN);
         
         DrawFPS(screenWidth - 100, 10);
         
         EndDrawing();
     }
     
-    // Cleanup models
-    UnloadModel(cubeModel);
-    UnloadModel(sphereModel);
-    UnloadModel(cylinderModel);
-    UnloadModel(floorModel);
-    UnloadModel(wallModel);
-    UnloadModel(mazeWallModel);
-    
-    // Cleanup advanced models if they were created
-    if (advancedMeshesGenerated) {
-        UnloadModel(advancedFloorModel);
-        UnloadModel(advancedWallModel);
-    }
+    // Cleanup scene manager (this will cleanup all scene resources)
+    CleanupSceneManager(&sceneManager);
     
     CloseWindow();
     
