@@ -25,3 +25,4 @@ Thumbs.db
 # Debug files
 *.pdb
 *.ilk
+.history/

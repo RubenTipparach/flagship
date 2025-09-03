@@ -1,8 +1,17 @@
 CC = gcc
 CFLAGS = -Wall -Wno-missing-braces -Wunused-result -std=c99 -O2
 INCLUDES = -Iraylib/src -I.
-LIBS_GL = -Lraylib/src -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
-LIBS_GLES = -Lraylib/src -lraylib -lGLESv2 -lEGL -lm -lpthread -ldl -lrt -lX11
+
+# Detect platform
+ifeq ($(OS),Windows_NT)
+    # Windows libraries
+    LIBS_GL = -Lraylib/src -lraylib -lopengl32 -lgdi32 -lwinmm
+    LIBS_GLES = -Lraylib/src -lraylib -lopengl32 -lgdi32 -lwinmm
+else
+    # Linux/Unix libraries
+    LIBS_GL = -Lraylib/src -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
+    LIBS_GLES = -Lraylib/src -lraylib -lGLESv2 -lEGL -lm -lpthread -ldl -lrt -lX11
+endif
 
 TARGET = fps_game
 SOURCES = fps_game.c

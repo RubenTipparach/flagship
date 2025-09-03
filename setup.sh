@@ -3,6 +3,53 @@
 echo "FPS Game Setup Script"
 echo "===================="
 
+# Install gcc compiler if not available
+if ! command -v gcc &> /dev/null; then
+    echo "GCC compiler not found. Installing..."
+    
+    if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+        # Windows - just provide instructions
+        echo "Please install MinGW-w64 and ensure it's in your PATH:"
+        echo "Option 1: Install via Chocolatey: choco install mingw"
+        echo "Option 2: Install via Scoop: scoop install mingw"  
+        echo "Option 3: Download from: https://www.mingw-w64.org/downloads/"
+        echo "Option 4: Install MSYS2 from: https://www.msys2.org/"
+        echo ""
+        echo "Or temporarily add to PATH: export PATH=\"/c/msys64/mingw64/bin:\$PATH\""
+        exit 1
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        # Linux
+        if command -v apt-get &> /dev/null; then
+            sudo apt-get update && sudo apt-get install -y gcc
+        elif command -v yum &> /dev/null; then
+            sudo yum install -y gcc
+        elif command -v dnf &> /dev/null; then
+            sudo dnf install -y gcc
+        elif command -v pacman &> /dev/null; then
+            sudo pacman -S --noconfirm gcc
+        fi
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS
+        if command -v brew &> /dev/null; then
+            brew install gcc
+        else
+            echo "Please install Xcode Command Line Tools: xcode-select --install"
+        fi
+    fi
+    
+    # Verify installation
+    if command -v gcc &> /dev/null; then
+        echo "✓ GCC installed successfully"
+        gcc --version
+    else
+        echo "✗ GCC installation failed or requires PATH update"
+        echo "Please restart your terminal and try again"
+        exit 1
+    fi
+else
+    echo "✓ GCC compiler found"
+fi
+
 # Install required dependencies for GLFW on Linux
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
     echo "Installing X11 development libraries for GLFW..."

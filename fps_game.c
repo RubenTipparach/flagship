@@ -1,5 +1,6 @@
 #include "raylib.h"
 #include "raymath.h"
+#include "rlgl.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -14,6 +15,8 @@
 #define SUN_POSITION_X 50.0f
 #define SUN_POSITION_Y 100.0f
 #define SUN_POSITION_Z 50.0f
+#define DEFAULT_WIREFRAME_THICKNESS 2.0f
+#define MAX_WIREFRAME_THICKNESS 5.0f
 
 typedef struct {
     Vector3 position;
@@ -21,6 +24,12 @@ typedef struct {
     Model model;
     bool hasModel;
 } GameObject;
+
+typedef struct {
+    bool antialiasingEnabled;
+    float wireframeThickness;
+    bool highQualityRendering;
+} GraphicsConfig;
 
 // Calculate lighting for a vertex based on sun position
 Color CalculateVertexLighting(Vector3 vertexPos, Vector3 normal, Color baseColor)
@@ -223,6 +232,78 @@ typedef struct {
     int height;
 } Maze;
 
+// Custom wireframe rendering function with thickness and antialiasing support
+void DrawCubeWiresThick(Vector3 position, float width, float height, float length, Color color, GraphicsConfig* config)
+{
+    if (!config->highQualityRendering)
+    {
+        // Fallback to basic wireframe for low-end devices
+        DrawCubeWires(position, width, height, length, color);
+        return;
+    }
+    
+    float x = position.x;
+    float y = position.y;
+    float z = position.z;
+    float w = width/2;
+    float h = height/2;
+    float l = length/2;
+    float thickness = config->wireframeThickness;
+    
+    // Enable smooth lines if antialiasing is enabled
+    if (config->antialiasingEnabled)
+    {
+        rlSetLineWidth(thickness);
+        rlEnableSmoothLines();
+    }
+    else
+    {
+        rlSetLineWidth(thickness);
+    }
+    
+    rlBegin(RL_LINES);
+    rlColor4ub(color.r, color.g, color.b, color.a);
+    
+    // Front face
+    rlVertex3f(x-w, y-h, z+l);
+    rlVertex3f(x+w, y-h, z+l);
+    rlVertex3f(x+w, y-h, z+l);
+    rlVertex3f(x+w, y+h, z+l);
+    rlVertex3f(x+w, y+h, z+l);
+    rlVertex3f(x-w, y+h, z+l);
+    rlVertex3f(x-w, y+h, z+l);
+    rlVertex3f(x-w, y-h, z+l);
+    
+    // Back face
+    rlVertex3f(x-w, y-h, z-l);
+    rlVertex3f(x+w, y-h, z-l);
+    rlVertex3f(x+w, y-h, z-l);
+    rlVertex3f(x+w, y+h, z-l);
+    rlVertex3f(x+w, y+h, z-l);
+    rlVertex3f(x-w, y+h, z-l);
+    rlVertex3f(x-w, y+h, z-l);
+    rlVertex3f(x-w, y-h, z-l);
+    
+    // Connecting edges
+    rlVertex3f(x-w, y-h, z+l);
+    rlVertex3f(x-w, y-h, z-l);
+    rlVertex3f(x+w, y-h, z+l);
+    rlVertex3f(x+w, y-h, z-l);
+    rlVertex3f(x+w, y+h, z+l);
+    rlVertex3f(x+w, y+h, z-l);
+    rlVertex3f(x-w, y+h, z+l);
+    rlVertex3f(x-w, y+h, z-l);
+    
+    rlEnd();
+    
+    if (config->antialiasingEnabled)
+    {
+        rlDisableSmoothLines();
+    }
+    
+    rlSetLineWidth(1.0f); // Reset line width
+}
+
 // Function to load maze from ASCII file
 Maze LoadMazeFromFile(const char* filename) {
     Maze maze = {0};
@@ -259,7 +340,13 @@ int main(void)
     const int screenWidth = 800;
     const int screenHeight = 600;
     
-    SetConfigFlags(FLAG_VSYNC_HINT);
+    // Initialize graphics configuration
+    GraphicsConfig gfxConfig = {0};
+    gfxConfig.antialiasingEnabled = true;
+    gfxConfig.wireframeThickness = DEFAULT_WIREFRAME_THICKNESS;
+    gfxConfig.highQualityRendering = true;
+    
+    SetConfigFlags(FLAG_VSYNC_HINT | (gfxConfig.antialiasingEnabled ? FLAG_MSAA_4X_HINT : 0));
     SetTraceLogLevel(LOG_WARNING);
     InitWindow(screenWidth, screenHeight, "FPS Cube World - Pi 4");
     
@@ -344,6 +431,27 @@ int main(void)
             }
         }
         
+        // Graphics config controls
+        if (IsKeyPressed(KEY_F1))
+        {
+            gfxConfig.antialiasingEnabled = !gfxConfig.antialiasingEnabled;
+            TraceLog(LOG_INFO, "Antialiasing: %s", gfxConfig.antialiasingEnabled ? "ON" : "OFF");
+        }
+        
+        if (IsKeyPressed(KEY_F2))
+        {
+            gfxConfig.wireframeThickness += 0.5f;
+            if (gfxConfig.wireframeThickness > MAX_WIREFRAME_THICKNESS)
+                gfxConfig.wireframeThickness = 1.0f;
+            TraceLog(LOG_INFO, "Wireframe thickness: %.1f", gfxConfig.wireframeThickness);
+        }
+        
+        if (IsKeyPressed(KEY_F3))
+        {
+            gfxConfig.highQualityRendering = !gfxConfig.highQualityRendering;
+            TraceLog(LOG_INFO, "High Quality Rendering: %s", gfxConfig.highQualityRendering ? "ON" : "OFF");
+        }
+        
         if (cursorLocked)
         {
             mousePos = GetMousePosition();
@@ -361,8 +469,8 @@ int main(void)
                 // Reset mouse to center
                 SetMousePosition(centerPos.x, centerPos.y);
                 
-                printf("Mouse delta: X=%.2f Y=%.2f, Yaw=%.2f Pitch=%.2f\n", 
-                       mouseDelta.x, mouseDelta.y, yaw, pitch);
+                // printf("Mouse delta: X=%.2f Y=%.2f, Yaw=%.2f Pitch=%.2f\n", 
+                //     mouseDelta.x, mouseDelta.y, yaw, pitch);
             }
             
             // Update camera target based on current yaw and pitch
@@ -401,90 +509,92 @@ int main(void)
         
         BeginDrawing();
         
-            ClearBackground(SKYBLUE);
-            
-            BeginMode3D(camera);
-            
-                // Add some basic lighting - draw sun at defined position
-                DrawSphere((Vector3){ SUN_POSITION_X, SUN_POSITION_Y, SUN_POSITION_Z }, 5.0f, YELLOW);  // Sun/light source
-                
-                // Draw custom floor with vertex colors
-                DrawModel(floorModel, (Vector3){ 0.0f, 0.0f, 0.0f }, 1.0f, WHITE);
-                
-                // No test cubes - clean maze environment
-                
-                // Draw maze walls from ASCII data
-                float cellSize = 10.0f; // Size of each maze cell
-                float wallThickness = 2.0f;
-                
-                // Calculate maze offset to center it
-                float mazeStartX = -(maze.width * cellSize) / 2.0f;
-                float mazeStartZ = -(maze.height * cellSize) / 2.0f;
-                
-                for (int row = 0; row < maze.height; row++) {
-                    for (int col = 0; col < maze.width; col++) {
-                        if (maze.data[row][col] == '#') {
-                            // Calculate wall position - walls should sit on the floor
-                            float wallX = mazeStartX + col * cellSize;
-                            float wallZ = mazeStartZ + row * cellSize;
-                            float wallY = WALL_HEIGHT / 2.0f; // Center the wall vertically, bottom touches floor at y=0
-                            
-                            // Draw wall block using a scaled cube
-                            Vector3 wallPos = (Vector3){ wallX, wallY, wallZ };
-                            DrawCube(wallPos, cellSize, WALL_HEIGHT, cellSize, GRAY);
-                            DrawCubeWires(wallPos, cellSize, WALL_HEIGHT, cellSize, BLACK);
-                        }
-                    }
+        ClearBackground(SKYBLUE);
+        
+        BeginMode3D(camera);
+        
+        // Add some basic lighting - draw sun at defined position
+        DrawSphere((Vector3){ SUN_POSITION_X, SUN_POSITION_Y, SUN_POSITION_Z }, 5.0f, YELLOW);  // Sun/light source
+        
+        // Draw custom floor with vertex colors
+        DrawModel(floorModel, (Vector3){ 0.0f, 0.0f, 0.0f }, 1.0f, WHITE);
+        
+        // No test cubes - clean maze environment
+        
+        // Draw maze walls from ASCII data
+        float cellSize = 10.0f; // Size of each maze cell
+        
+        // Calculate maze offset to center it
+        float mazeStartX = -(maze.width * cellSize) / 2.0f;
+        float mazeStartZ = -(maze.height * cellSize) / 2.0f;
+        
+        for (int row = 0; row < maze.height; row++) {
+            for (int col = 0; col < maze.width; col++) {
+                if (maze.data[row][col] == '#') {
+                    // Calculate wall position - walls should sit on the floor
+                    float wallX = mazeStartX + col * cellSize;
+                    float wallZ = mazeStartZ + row * cellSize;
+                    float wallY = WALL_HEIGHT / 2.0f; // Center the wall vertically, bottom touches floor at y=0
+                    
+                    // Draw wall block using a scaled cube
+                    Vector3 wallPos = (Vector3){ wallX, wallY, wallZ };
+                    DrawCube(wallPos, cellSize, WALL_HEIGHT, cellSize, GRAY);
+                    DrawCubeWiresThick(wallPos, cellSize, WALL_HEIGHT, cellSize, BLACK, &gfxConfig);
                 }
-                
-                // No objects in the maze - just walls and floor
-                
-                DrawGrid(100, 1.0f);
-                
-            EndMode3D();
-            
-            DrawText("FPS Cube World", 10, 10, 20, BLACK);
-            DrawText("WASD to move", 10, 30, 16, DARKGRAY);
-            if (cursorLocked)
-                DrawText("TAB to unlock cursor, Mouse to look", 10, 50, 16, DARKGRAY);
-            else
-                DrawText("TAB to lock cursor for mouse look", 10, 50, 16, DARKGRAY);
-            
-            // Display player coordinates and debug info
-            printf("Player Position: X=%.2f, Y=%.2f, Z=%.2f\n", 
-                   camera.position.x, camera.position.y, camera.position.z);
-            char coordText[200];
-            sprintf(coordText, "Position: X=%.1f Y=%.1f Z=%.1f", 
-                    camera.position.x, camera.position.y, camera.position.z);
-            DrawText(coordText, 10, 70, 16, DARKGREEN);
+            }
+        }
+        
+        // No objects in the maze - just walls and floor
+        
+        DrawGrid(100, 1.0f);
+        
+        EndMode3D();
+        
+        DrawText("FPS Cube World", 10, 10, 20, BLACK);
+        DrawText("WASD to move", 10, 30, 16, DARKGRAY);
+        if (cursorLocked)
+            DrawText("TAB to unlock cursor, Mouse to look", 10, 50, 16, DARKGRAY);
+        else
+            DrawText("TAB to lock cursor for mouse look", 10, 50, 16, DARKGRAY);
+        
+        DrawText("F1: Toggle Antialiasing, F2: Wireframe Thickness, F3: Quality", 10, 70, 14, DARKGRAY);
+        
+        // Display player coordinates and debug info
+        // printf("Player Position: X=%.2f, Y=%.2f, Z=%.2f\n", 
+        //        camera.position.x, camera.position.y, camera.position.z);
+        char coordText[200];
+        sprintf(coordText, "Position: X=%.1f Y=%.1f Z=%.1f", 
+            camera.position.x, camera.position.y, camera.position.z);
+            DrawText(coordText, 10, 90, 16, DARKGREEN);
             
             char debugText[200];
             sprintf(debugText, "Target: X=%.1f Y=%.1f Z=%.1f", 
-                    camera.target.x, camera.target.y, camera.target.z);
-            DrawText(debugText, 10, 90, 16, DARKGREEN);
-            
-            sprintf(debugText, "Floor vertices: %d, Wall vertices: %d", 
-                    floorModel.meshCount > 0 ? floorModel.meshes[0].vertexCount : 0,
-                    wallModel.meshCount > 0 ? wallModel.meshes[0].vertexCount : 0);
-            DrawText(debugText, 10, 110, 16, DARKGREEN);
-            
-            sprintf(debugText, "Cursor: %s, Yaw=%.2f, Pitch=%.2f", 
-                    cursorLocked ? "LOCKED" : "FREE", yaw * 180.0f / PI, pitch * 180.0f / PI);
-            DrawText(debugText, 10, 130, 16, DARKGREEN);
-            
-            DrawFPS(screenWidth - 100, 10);
-            
-        EndDrawing();
-    }
-    
-    // Cleanup models
-    UnloadModel(cubeModel);
-    UnloadModel(sphereModel);
-    UnloadModel(cylinderModel);
-    UnloadModel(floorModel);
-    UnloadModel(wallModel);
-    
-    CloseWindow();
-    
-    return 0;
-}
+                camera.target.x, camera.target.y, camera.target.z);
+                DrawText(debugText, 10, 110, 16, DARKGREEN);
+                
+                sprintf(debugText, "Graphics: AA:%s Thickness:%.1f Quality:%s", 
+                    gfxConfig.antialiasingEnabled ? "ON" : "OFF",
+                    gfxConfig.wireframeThickness,
+                    gfxConfig.highQualityRendering ? "HIGH" : "LOW");
+                    DrawText(debugText, 10, 130, 16, DARKGREEN);
+                    
+                    sprintf(debugText, "Cursor: %s, Yaw=%.2f, Pitch=%.2f", 
+                        cursorLocked ? "LOCKED" : "FREE", yaw * 180.0f / PI, pitch * 180.0f / PI);
+                        DrawText(debugText, 10, 150, 16, DARKGREEN);
+                        
+                        DrawFPS(screenWidth - 100, 10);
+                        
+                        EndDrawing();
+                    }
+                    
+                    // Cleanup models
+                    UnloadModel(cubeModel);
+                    UnloadModel(sphereModel);
+                    UnloadModel(cylinderModel);
+                    UnloadModel(floorModel);
+                    UnloadModel(wallModel);
+                    
+                    CloseWindow();
+                    
+                    return 0;
+                }
