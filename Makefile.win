@@ -1,11 +1,11 @@
 # Makefile for Windows (MinGW/MSYS2)
 CC = gcc
 CFLAGS = -Wall -Wno-missing-braces -Wunused-result -std=c99 -O2
-INCLUDES = -Iraylib/src -I.
+INCLUDES = -Iraylib/src -Iinclude
 LIBS = -Lraylib/src -lraylib -lopengl32 -lgdi32 -lwinmm -lkernel32 -lshell32 -luser32
 
 TARGET = fps_game.exe
-SOURCES = fps_game.c
+SOURCES = src/fps_game.c src/lighting.c src/mesh_generation.c src/mesh_generation_advanced.c src/rendering.c src/maze.c
 
 # Default target
 all: $(TARGET)

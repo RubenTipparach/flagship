@@ -26,3 +26,5 @@ Thumbs.db
 *.pdb
 *.ilk
 .history/
+fps_game_test.exe
+nul

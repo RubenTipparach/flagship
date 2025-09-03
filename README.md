@@ -92,11 +92,27 @@ The code is **fully cross-platform compatible**:
 ## File Structure
 
 ```
-fps_game.c          # Main game source
-Makefile           # Linux/macOS/Pi build
-Makefile.win       # Windows build  
-setup.sh           # Raylib setup script
-.gitignore         # Excludes raylib and build files
-README.md          # This file
-raylib/            # Downloaded by setup.sh (gitignored)
+src/                          # Source files
+├── fps_game.c               # Main game source
+├── lighting.c               # Lighting system implementation
+├── mesh_generation.c        # Basic mesh generation
+├── mesh_generation_advanced.c  # Advanced mesh generation with lighting
+├── rendering.c              # Custom rendering functions
+└── maze.c                   # Maze loading functionality
+
+include/                      # Header files
+├── game_types.h             # Core game data structures
+├── lighting.h               # Lighting system definitions
+├── mesh_generation.h        # Mesh generation function declarations
+├── rendering.h              # Custom rendering function declarations
+└── maze.h                   # Maze loading function declarations
+
+Makefile                     # Linux/macOS/Pi build
+Makefile.win                 # Windows build  
+setup.sh                     # Raylib setup script (Linux/macOS)
+setup.bat                    # Raylib setup script (Windows)
+maze.txt                     # Sample maze file
+.gitignore                   # Excludes raylib and build files
+README.md                    # This file
+raylib/                      # Downloaded by setup scripts (gitignored)
 ```

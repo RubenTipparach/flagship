@@ -1,12 +1,12 @@
 CC = gcc
 CFLAGS = -Wall -Wno-missing-braces -Wunused-result -std=c99 -O2
-INCLUDES = -Iraylib/src -I.
+INCLUDES = -Iraylib/src -Iinclude
 
 # Detect platform
 ifeq ($(OS),Windows_NT)
     # Windows libraries
-    LIBS_GL = -Lraylib/src -lraylib -lopengl32 -lgdi32 -lwinmm
-    LIBS_GLES = -Lraylib/src -lraylib -lopengl32 -lgdi32 -lwinmm
+    LIBS_GL = -Lraylib/src -lraylib -lopengl32 -lgdi32 -lwinmm -lkernel32 -lshell32 -luser32
+    LIBS_GLES = -Lraylib/src -lraylib -lopengl32 -lgdi32 -lwinmm -lkernel32 -lshell32 -luser32
 else
     # Linux/Unix libraries
     LIBS_GL = -Lraylib/src -lraylib -lGL -lm -lpthread -ldl -lrt -lX11
@@ -14,7 +14,7 @@ else
 endif
 
 TARGET = fps_game
-SOURCES = fps_game.c
+SOURCES = src/fps_game.c src/lighting.c src/mesh_generation.c src/mesh_generation_advanced.c src/rendering.c src/maze.c
 
 # Default target
 all: $(TARGET)
