@@ -366,10 +366,10 @@ void UpdateCubeSphereScene(Scene* scene, float deltaTime, Camera3D* camera) {
     }
     
     // Handle wireframe toggle
-    if (IsKeyPressed(KEY_W)) {
-        data->cubeSphere.wireframeMode = !data->cubeSphere.wireframeMode;
-        printf("Wireframe mode: %s\n", data->cubeSphere.wireframeMode ? "ON" : "OFF");
-    }
+    // if (IsKeyPressed(KEY_W)) {
+    //     data->cubeSphere.wireframeMode = !data->cubeSphere.wireframeMode;
+    //     printf("Wireframe mode: %s\n", data->cubeSphere.wireframeMode ? "ON" : "OFF");
+    // }
     
     // Rebuild mesh if morph factor changed
     if (morphChanged && data->cubeSphere.loaded) {
