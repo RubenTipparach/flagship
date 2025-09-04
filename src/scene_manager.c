@@ -23,6 +23,7 @@ typedef struct {
 // Cube-Sphere scene specific data
 typedef struct {
     CubeSphereData cubeSphere;
+    TerrainData terrain;
 } CubeSphereSceneData;
 
 // Scene manager functions
@@ -322,71 +323,141 @@ void InitCubeSphereScene(Scene* scene, LightingSystem* lighting, GraphicsConfig*
     CubeSphereSceneData* data = (CubeSphereSceneData*)malloc(sizeof(CubeSphereSceneData));
     scene->sceneData = data;
     
+    // Initialize terrain data first
+    data->terrain.size = TERRAIN_SIZE;
+    data->terrain.loaded = false;
+    data->terrain.heightMultiplier = 1.0f;  // Start with full terrain height
+    data->terrain.needsRebuild = false;
+    
+    // Try to load height map (same logic as terrain scene)
+    Image heightImage = LoadImage("heightmap.png");
+    if (heightImage.data != NULL) {
+        // Convert image to height data
+        ImageFormat(&heightImage, PIXELFORMAT_UNCOMPRESSED_GRAYSCALE);
+        
+        // Scale image to terrain size if needed
+        if (heightImage.width != TERRAIN_SIZE || heightImage.height != TERRAIN_SIZE) {
+            ImageResize(&heightImage, TERRAIN_SIZE, TERRAIN_SIZE);
+        }
+        
+        // Convert pixel data to height values
+        unsigned char* pixels = (unsigned char*)heightImage.data;
+        for (int y = 0; y < TERRAIN_SIZE; y++) {
+            for (int x = 0; x < TERRAIN_SIZE; x++) {
+                int index = y * TERRAIN_SIZE + x;
+                data->terrain.heights[y][x] = (float)pixels[index] / 255.0f * 50.0f; // Scale to 0-50 units height
+            }
+        }
+        
+        data->terrain.heightTexture = LoadTextureFromImage(heightImage);
+        UnloadImage(heightImage);
+        data->terrain.loaded = true;
+        printf("Loaded height map for terrain cube: heightmap.png\n");
+    } else {
+        // Generate random terrain if no height map found
+        printf("No heightmap.png found, generating random terrain for cube\n");
+        for (int y = 0; y < TERRAIN_SIZE; y++) {
+            for (int x = 0; x < TERRAIN_SIZE; x++) {
+                // Simple noise-like generation
+                float distance = sqrtf((x - TERRAIN_SIZE/2.0f) * (x - TERRAIN_SIZE/2.0f) + 
+                                     (y - TERRAIN_SIZE/2.0f) * (y - TERRAIN_SIZE/2.0f));
+                float normalizedDist = distance / (TERRAIN_SIZE * 0.5f);
+                
+                // Create island-like terrain
+                float height = (1.0f - normalizedDist) * 30.0f;
+                if (height < 0) height = 0;
+                
+                // Add some randomness
+                height += (float)(rand() % 100) / 100.0f * 5.0f - 2.5f;
+                if (height < 0) height = 0;
+                
+                data->terrain.heights[y][x] = height;
+            }
+        }
+        data->terrain.loaded = true; // Mark as loaded even with generated terrain
+    }
+    
     // Initialize cube-sphere data
     data->cubeSphere.radius = 50.0f;
     data->cubeSphere.center = (Vector3){0.0f, 0.0f, 0.0f};
-    data->cubeSphere.subdivisionLevel = 8; // Higher subdivision for smoother morphing
-    data->cubeSphere.dynamicSubdivisions = 8;
+    data->cubeSphere.subdivisionLevel = 16; // Higher subdivision for terrain detail
+    data->cubeSphere.dynamicSubdivisions = 16;
     data->cubeSphere.lastCameraDistance = 0.0f;
     data->cubeSphere.needsRebuild = true;
     data->cubeSphere.loaded = false;
     data->cubeSphere.morphFactor = 0.0f; // Start as a cube
     data->cubeSphere.wireframeMode = false; // Start in solid mode
     
-    // Generate initial mesh using the new morphing function
-    Mesh sphereMesh = GenMeshSubdividedCube(data->cubeSphere.radius, data->cubeSphere.subdivisionLevel, data->cubeSphere.morphFactor);
-    data->cubeSphere.sphereModel = LoadModelFromMesh(sphereMesh);
-    data->cubeSphere.sphereMesh = sphereMesh;
+    // Generate initial mesh using terrain cube with morphing function
+    float heightScale = 0.5f; // Scale for terrain displacement
+    Mesh terrainCubeMesh = GenMeshTerrainCubeMorphing(data->cubeSphere.radius, data->cubeSphere.subdivisionLevel, &data->terrain, heightScale, data->cubeSphere.morphFactor);
+    data->cubeSphere.sphereModel = LoadModelFromMesh(terrainCubeMesh);
+    data->cubeSphere.sphereMesh = terrainCubeMesh;
     data->cubeSphere.loaded = true;
     data->cubeSphere.needsRebuild = false;
     
     scene->initialized = true;
-    printf("Initialized Cube-Sphere scene with radius %.1f and subdivision level %d\n", 
+    printf("Initialized Terrain Cube scene with radius %.1f and subdivision level %d\n", 
            data->cubeSphere.radius, data->cubeSphere.subdivisionLevel);
+    printf("Terrain loaded: %s, vertices: %d\n", data->terrain.loaded ? "YES" : "NO", terrainCubeMesh.vertexCount);
 }
 
 void UpdateCubeSphereScene(Scene* scene, float deltaTime, Camera3D* camera) {
     CubeSphereSceneData* data = (CubeSphereSceneData*)scene->sceneData;
     
+    bool terrainChanged = false;
     bool morphChanged = false;
     
-    // Handle morphing controls
+    // Handle sphere morphing factor with +/- keys
     if (IsKeyPressed(KEY_EQUAL) || IsKeyPressed(KEY_KP_ADD)) {  // + key
         data->cubeSphere.morphFactor += 0.1f;
         if (data->cubeSphere.morphFactor > 1.0f) data->cubeSphere.morphFactor = 1.0f;
         morphChanged = true;
-        printf("Morph factor: %.1f\n", data->cubeSphere.morphFactor);
+        printf("Sphere morph factor: %.1f (0=Cube, 1=Sphere)\n", data->cubeSphere.morphFactor);
     }
     
     if (IsKeyPressed(KEY_MINUS) || IsKeyPressed(KEY_KP_SUBTRACT)) {  // - key
         data->cubeSphere.morphFactor -= 0.1f;
         if (data->cubeSphere.morphFactor < 0.0f) data->cubeSphere.morphFactor = 0.0f;
         morphChanged = true;
-        printf("Morph factor: %.1f\n", data->cubeSphere.morphFactor);
+        printf("Sphere morph factor: %.1f (0=Cube, 1=Sphere)\n", data->cubeSphere.morphFactor);
     }
     
-    // Handle wireframe toggle
-    // if (IsKeyPressed(KEY_W)) {
-    //     data->cubeSphere.wireframeMode = !data->cubeSphere.wireframeMode;
-    //     printf("Wireframe mode: %s\n", data->cubeSphere.wireframeMode ? "ON" : "OFF");
-    // }
+    // Handle terrain height adjustment with 0/9 keys
+    if (IsKeyPressed(KEY_NINE)) {  // 9 key - increase terrain height
+        data->terrain.heightMultiplier += 0.1f;
+        if (data->terrain.heightMultiplier > 3.0f) data->terrain.heightMultiplier = 3.0f;
+        terrainChanged = true;
+        printf("Terrain height multiplier: %.1f\n", data->terrain.heightMultiplier);
+    }
     
-    // Rebuild mesh if morph factor changed
-    if (morphChanged && data->cubeSphere.loaded) {
+    if (IsKeyPressed(KEY_ZERO)) {  // 0 key - decrease terrain height
+        data->terrain.heightMultiplier -= 0.1f;
+        if (data->terrain.heightMultiplier < 0.0f) data->terrain.heightMultiplier = 0.0f;
+        terrainChanged = true;
+        printf("Terrain height multiplier: %.1f\n", data->terrain.heightMultiplier);
+    }
+    
+    
+
+    
+    // Rebuild terrain cube if terrain height or morph factor changed
+    if ((terrainChanged || morphChanged) && data->terrain.loaded && data->cubeSphere.loaded) {
         // Unload old model
         if (data->cubeSphere.sphereModel.meshCount > 0) {
             UnloadModel(data->cubeSphere.sphereModel);
         }
         
-        // Generate new mesh with current morph factor
-        Mesh newSphereMesh = GenMeshSubdividedCube(data->cubeSphere.radius, data->cubeSphere.subdivisionLevel, 
-                                                 data->cubeSphere.morphFactor);
-        data->cubeSphere.sphereModel = LoadModelFromMesh(newSphereMesh);
-        data->cubeSphere.sphereMesh = newSphereMesh;
+        // Generate new terrain cube with current height multiplier and morph factor
+        float heightScale = 0.5f; // Base height scaling
+        Mesh newTerrainCubeMesh = GenMeshTerrainCubeMorphing(data->cubeSphere.radius, data->cubeSphere.subdivisionLevel, 
+                                                            &data->terrain, heightScale, data->cubeSphere.morphFactor);
+        data->cubeSphere.sphereModel = LoadModelFromMesh(newTerrainCubeMesh);
+        data->cubeSphere.sphereMesh = newTerrainCubeMesh;
         data->cubeSphere.needsRebuild = false;
         
-        printf("Rebuilt morphing mesh with factor %.1f (%d vertices)\n", 
-               data->cubeSphere.morphFactor, newSphereMesh.vertexCount);
+        printf("Rebuilt terrain cube with height multiplier %.1f (%d vertices)\n", 
+               data->terrain.heightMultiplier, newTerrainCubeMesh.vertexCount);
     }
 }
 
@@ -395,17 +466,13 @@ void RenderCubeSphereScene(Scene* scene, Camera3D camera, GraphicsConfig* gfxCon
     
     if (!data->cubeSphere.loaded) return;
     
-    if (data->cubeSphere.wireframeMode) {
-        // Draw only wireframe
+    // Draw solid terrain cube model
+    DrawModel(data->cubeSphere.sphereModel, data->cubeSphere.center, 1.0f, WHITE);
+    
+    // Always draw wireframe overlay on top
+    if (gfxConfig->wireframeThickness > 0.0f) {
         DrawCubeSphereWires(data->cubeSphere.center, data->cubeSphere.radius, 
-                           data->cubeSphere.subdivisionLevel, LIME, gfxConfig);
-    } else {
-        // Draw solid model with optional wireframe overlay
-        DrawModel(data->cubeSphere.sphereModel, data->cubeSphere.center, 1.0f, WHITE);
-        
-        // Optionally draw a subtle wireframe overlay
-        DrawCubeSphereWires(data->cubeSphere.center, data->cubeSphere.radius, 
-                           data->cubeSphere.subdivisionLevel, (Color){100, 255, 100, 80}, gfxConfig);
+                           data->cubeSphere.subdivisionLevel, (Color){255, 255, 255, 60}, gfxConfig);
     }
     
     // Draw some reference objects to show scale
@@ -413,12 +480,13 @@ void RenderCubeSphereScene(Scene* scene, Camera3D camera, GraphicsConfig* gfxCon
     DrawCube((Vector3){0, data->cubeSphere.radius + 20.0f, 0}, 5, 5, 5, GREEN);
     DrawCube((Vector3){0, 0, data->cubeSphere.radius + 20.0f}, 5, 5, 5, BLUE);
     
-    // Draw UI info
-    DrawText(TextFormat("Morph Factor: %.1f (0=Cube, 1=Sphere)", data->cubeSphere.morphFactor), 10, 10, 20, WHITE);
-    DrawText(TextFormat("Wireframe Mode: %s", data->cubeSphere.wireframeMode ? "ON" : "OFF"), 10, 35, 20, WHITE);
-    DrawText(TextFormat("Subdivision Level: %d", data->cubeSphere.subdivisionLevel), 10, 60, 20, WHITE);
-    DrawText(TextFormat("Vertices: %d", data->cubeSphere.sphereMesh.vertexCount), 10, 85, 20, WHITE);
-    DrawText("Press +/- keys to morph, W to toggle wireframe", 10, 110, 20, YELLOW);
+    // Draw UI info for terrain cube
+    DrawText(TextFormat("Terrain Cube - Height: %.1f, Morph: %.1f", data->terrain.heightMultiplier, data->cubeSphere.morphFactor), 10, 10, 20, WHITE);
+    DrawText(TextFormat("Subdivision Level: %d", data->cubeSphere.subdivisionLevel), 10, 35, 20, WHITE);
+    DrawText(TextFormat("Vertices: %d", data->cubeSphere.sphereMesh.vertexCount), 10, 60, 20, WHITE);
+    DrawText(TextFormat("Terrain Loaded: %s", data->terrain.loaded ? "YES" : "NO"), 10, 85, 20, WHITE);
+    DrawText("Press +/- for sphere morph, 0/9 for terrain height", 10, 110, 20, YELLOW);
+    DrawText("Terrain colors: Blue=Water, Tan=Beach, Green=Grass, Brown=Mountain, White=Snow", 10, 135, 18, LIGHTGRAY);
 }
 
 void CleanupCubeSphereScene(Scene* scene) {
@@ -426,6 +494,9 @@ void CleanupCubeSphereScene(Scene* scene) {
         CubeSphereSceneData* data = (CubeSphereSceneData*)scene->sceneData;
         if (data->cubeSphere.loaded && data->cubeSphere.sphereModel.meshCount > 0) {
             UnloadModel(data->cubeSphere.sphereModel);
+        }
+        if (data->terrain.loaded && data->terrain.heightTexture.id > 0) {
+            UnloadTexture(data->terrain.heightTexture);
         }
         free(data);
         scene->sceneData = NULL;
@@ -435,7 +506,7 @@ void CleanupCubeSphereScene(Scene* scene) {
 Scene CreateCubeSphereScene(void) {
     Scene scene = {0};
     scene.type = SCENE_CUBE_SPHERE;
-    strcpy(scene.name, "Cube-Sphere Scene");
+    strcpy(scene.name, "Terrain Cube Scene");
     scene.initialized = false;
     scene.sceneData = NULL;
     

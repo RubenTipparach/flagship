@@ -3,6 +3,76 @@
 #include "raymath.h"
 #include <math.h>
 
+#ifndef PI
+#define PI 3.14159265358979323846f
+#endif
+
+// Terrain color functions (static to avoid conflicts)
+static Color LerpColor(Color a, Color b, float t) {
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+    
+    return (Color){
+        (unsigned char)(a.r + (b.r - a.r) * t),
+        (unsigned char)(a.g + (b.g - a.g) * t),
+        (unsigned char)(a.b + (b.b - a.b) * t),
+        255
+    };
+}
+
+static Color GetTerrainColorByHeight(float height, float maxHeight) {
+    if (maxHeight <= 0.0f) {
+        // Flat terrain - return base color
+        return (Color){100, 150, 100, 255}; // Green
+    }
+    
+    // Normalize height to 0-1 range
+    float normalizedHeight = height / maxHeight;
+    if (normalizedHeight < 0.0f) normalizedHeight = 0.0f;
+    if (normalizedHeight > 1.0f) normalizedHeight = 1.0f;
+    
+    // Define color stops and thresholds
+    Color deepWater = {20, 50, 120, 255};      // Deep blue
+    Color shallowWater = {40, 80, 180, 255};   // Light blue
+    Color beach = {194, 178, 128, 255};        // Light tan/sand
+    Color grass = {85, 140, 45, 255};          // Green
+    Color darkGrass = {60, 100, 30, 255};      // Dark green
+    Color rock = {80, 70, 60, 255};            // Brown
+    Color snow = {240, 245, 255, 255};         // White snow
+    
+    // Define gradual transitions
+    if (normalizedHeight < 0.1f) {
+        // Deep water to shallow water
+        float t = normalizedHeight / 0.1f;
+        return LerpColor(deepWater, shallowWater, t);
+    }
+    else if (normalizedHeight < 0.2f) {
+        // Shallow water to beach
+        float t = (normalizedHeight - 0.1f) / 0.1f;
+        return LerpColor(shallowWater, beach, t);
+    }
+    else if (normalizedHeight < 0.35f) {
+        // Beach to grass
+        float t = (normalizedHeight - 0.2f) / 0.15f;
+        return LerpColor(beach, grass, t);
+    }
+    else if (normalizedHeight < 0.6f) {
+        // Grass to dark grass
+        float t = (normalizedHeight - 0.35f) / 0.25f;
+        return LerpColor(grass, darkGrass, t);
+    }
+    else if (normalizedHeight < 0.8f) {
+        // Dark grass to rock/brown
+        float t = (normalizedHeight - 0.6f) / 0.2f;
+        return LerpColor(darkGrass, rock, t);
+    }
+    else {
+        // Rock to snow
+        float t = (normalizedHeight - 0.8f) / 0.2f;
+        return LerpColor(rock, snow, t);
+    }
+}
+
 // Generate a custom floor mesh with vertex colors
 Mesh GenMeshFloorWithColors(float width, float height, int resX, int resZ)
 {
@@ -455,6 +525,488 @@ Mesh GenMeshCubeSphere(float radius, int subdivisions, Vector3 center) {
                 baseColor.b = (unsigned char)(baseColor.b * variation);
                 
                 Color litColor = CalculateSimpleLighting(sphereVertex, sphereNormal, baseColor);
+                
+                mesh.colors[cCounter++] = litColor.r;
+                mesh.colors[cCounter++] = litColor.g;
+                mesh.colors[cCounter++] = litColor.b;
+                mesh.colors[cCounter++] = litColor.a;
+            }
+        }
+        
+        // Generate indices for this face
+        for (int j = 0; j < segmentsPerFace; j++) {
+            for (int i = 0; i < segmentsPerFace; i++) {
+                int topLeft = vertexIndex + j * (segmentsPerFace + 1) + i;
+                int topRight = topLeft + 1;
+                int bottomLeft = topLeft + (segmentsPerFace + 1);
+                int bottomRight = bottomLeft + 1;
+                
+                // First triangle
+                mesh.indices[iCounter++] = topLeft;
+                mesh.indices[iCounter++] = bottomLeft;
+                mesh.indices[iCounter++] = topRight;
+                
+                // Second triangle
+                mesh.indices[iCounter++] = topRight;
+                mesh.indices[iCounter++] = bottomLeft;
+                mesh.indices[iCounter++] = bottomRight;
+            }
+        }
+        
+        vertexIndex += verticesPerFace;
+    }
+    
+    UploadMesh(&mesh, false);
+    return mesh;
+}
+
+// Sample height from terrain data with bilinear interpolation
+float SampleTerrainHeight(const TerrainData* terrain, float u, float v) {
+    if (!terrain || !terrain->loaded) return 0.0f;
+    
+    // Convert UV coordinates to heightmap coordinates
+    float x = u * (terrain->size - 1);
+    float y = v * (terrain->size - 1);
+    
+    // Get integer and fractional parts
+    int x0 = (int)floor(x);
+    int y0 = (int)floor(y);
+    int x1 = x0 + 1;
+    int y1 = y0 + 1;
+    
+    float fx = x - x0;
+    float fy = y - y0;
+    
+    // Clamp to bounds
+    x0 = (x0 < 0) ? 0 : ((x0 >= terrain->size) ? terrain->size - 1 : x0);
+    x1 = (x1 < 0) ? 0 : ((x1 >= terrain->size) ? terrain->size - 1 : x1);
+    y0 = (y0 < 0) ? 0 : ((y0 >= terrain->size) ? terrain->size - 1 : y0);
+    y1 = (y1 < 0) ? 0 : ((y1 >= terrain->size) ? terrain->size - 1 : y1);
+    
+    // Sample four neighboring heights
+    float h00 = terrain->heights[y0][x0];
+    float h10 = terrain->heights[y0][x1];
+    float h01 = terrain->heights[y1][x0];
+    float h11 = terrain->heights[y1][x1];
+    
+    // Bilinear interpolation
+    float h0 = h00 + (h10 - h00) * fx;
+    float h1 = h01 + (h11 - h01) * fx;
+    return h0 + (h1 - h0) * fy;
+}
+
+// Generate cube with terrain height map displacement on each face
+Mesh GenMeshTerrainCube(float size, int subdivisions, const TerrainData* terrain, float heightScale) {
+    int segmentsPerFace = subdivisions + 1;
+    int verticesPerFace = (segmentsPerFace + 1) * (segmentsPerFace + 1);
+    int totalVertices = verticesPerFace * 6;
+    int trianglesPerFace = segmentsPerFace * segmentsPerFace * 2;
+    int totalTriangles = trianglesPerFace * 6;
+    
+    Mesh mesh = { 0 };
+    mesh.vertexCount = totalVertices;
+    mesh.triangleCount = totalTriangles;
+    
+    mesh.vertices = (float *)MemAlloc(totalVertices * 3 * sizeof(float));
+    mesh.texcoords = (float *)MemAlloc(totalVertices * 2 * sizeof(float));
+    mesh.normals = (float *)MemAlloc(totalVertices * 3 * sizeof(float));
+    mesh.colors = (unsigned char *)MemAlloc(totalVertices * 4 * sizeof(unsigned char));
+    mesh.indices = (unsigned short *)MemAlloc(totalTriangles * 3 * sizeof(unsigned short));
+    
+    int vCounter = 0;
+    int tcCounter = 0;
+    int nCounter = 0;
+    int cCounter = 0;
+    int iCounter = 0;
+    int vertexIndex = 0;
+    
+    float halfSize = size * 0.5f;
+    float maxTerrainHeight = 0.0f;
+    
+    // Calculate maximum height for color scaling
+    if (terrain && terrain->loaded) {
+        for (int z = 0; z < terrain->size; z++) {
+            for (int x = 0; x < terrain->size; x++) {
+                float height = terrain->heights[z][x] * heightScale * terrain->heightMultiplier;
+                if (height > maxTerrainHeight) {
+                    maxTerrainHeight = height;
+                }
+            }
+        }
+    }
+    
+    // Define face data with proper cube mapping
+    Vector3 faceNormals[6] = {
+        {0, 0, 1},   // Front (+Z)
+        {0, 0, -1},  // Back (-Z)
+        {-1, 0, 0},  // Left (-X)
+        {1, 0, 0},   // Right (+X)
+        {0, 1, 0},   // Top (+Y)
+        {0, -1, 0}   // Bottom (-Y)
+    };
+    
+    Vector3 faceU[6] = {
+        {1, 0, 0}, {-1, 0, 0}, {0, 0, -1}, {0, 0, 1}, {1, 0, 0}, {1, 0, 0}
+    };
+    
+    Vector3 faceV[6] = {
+        {0, 1, 0}, {0, 1, 0}, {0, 1, 0}, {0, 1, 0}, {0, 0, 1}, {0, 0, -1}
+    };
+    
+    // Generate vertices for each face
+    for (int face = 0; face < 6; face++) {
+        Vector3 normal = faceNormals[face];
+        Vector3 u = faceU[face];
+        Vector3 v = faceV[face];
+        
+        for (int j = 0; j <= segmentsPerFace; j++) {
+            for (int i = 0; i <= segmentsPerFace; i++) {
+                float s = (float)i / segmentsPerFace;
+                float t = (float)j / segmentsPerFace;
+                
+                // Calculate base cube vertex position
+                Vector3 cubePos;
+                cubePos.x = normal.x * halfSize + u.x * halfSize * (s - 0.5f) * 2.0f + v.x * halfSize * (t - 0.5f) * 2.0f;
+                cubePos.y = normal.y * halfSize + u.y * halfSize * (s - 0.5f) * 2.0f + v.y * halfSize * (t - 0.5f) * 2.0f;
+                cubePos.z = normal.z * halfSize + u.z * halfSize * (s - 0.5f) * 2.0f + v.z * halfSize * (t - 0.5f) * 2.0f;
+                
+                // Sample terrain height for displacement
+                float terrainHeight = 0.0f;
+                if (terrain && terrain->loaded) {
+                    // Use cube-to-sphere projection for seamless UV mapping
+                    // First normalize the cube position to [-1, 1] range
+                    Vector3 normalizedCubePos = {
+                        cubePos.x / halfSize,
+                        cubePos.y / halfSize,
+                        cubePos.z / halfSize
+                    };
+                    
+                    // Project cube position to sphere for seamless UV coordinates
+                    Vector3 spherePos = ProjectCubeToSphere(normalizedCubePos);
+                    
+                    // Convert sphere coordinates to spherical UV coordinates
+                    float phi = atan2f(spherePos.z, spherePos.x);  // Azimuth angle
+                    float theta = asinf(spherePos.y);              // Elevation angle
+                    
+                    // Normalize to [0, 1] UV coordinates
+                    float terrainU = (phi + PI) / (2.0f * PI);     // Wrap phi to [0, 1]
+                    float terrainV = (theta + PI/2.0f) / PI;       // Map theta to [0, 1]
+                    
+                    // Ensure UV coordinates are within bounds
+                    terrainU = fmodf(terrainU + 1.0f, 1.0f);
+                    terrainV = fmaxf(0.0f, fminf(1.0f, terrainV));
+                    
+                    terrainHeight = SampleTerrainHeight(terrain, terrainU, terrainV) * heightScale * terrain->heightMultiplier;
+                }
+                
+                // Apply terrain displacement along face normal
+                Vector3 displacement = Vector3Scale(normal, terrainHeight);
+                Vector3 finalPos = Vector3Add(cubePos, displacement);
+                
+                mesh.vertices[vCounter++] = finalPos.x;
+                mesh.vertices[vCounter++] = finalPos.y;
+                mesh.vertices[vCounter++] = finalPos.z;
+                
+                // Calculate normal by sampling neighboring heights
+                Vector3 calculatedNormal = normal; // Default to face normal
+                
+                if (terrain && terrain->loaded && i > 0 && i < segmentsPerFace && j > 0 && j < segmentsPerFace) {
+                    float offset = 1.0f / segmentsPerFace;
+                    
+                    // Calculate neighboring cube positions for consistent normal calculation
+                    Vector3 leftCubePos = {
+                        normal.x * halfSize + u.x * halfSize * (s - offset - 0.5f) * 2.0f + v.x * halfSize * (t - 0.5f) * 2.0f,
+                        normal.y * halfSize + u.y * halfSize * (s - offset - 0.5f) * 2.0f + v.y * halfSize * (t - 0.5f) * 2.0f,
+                        normal.z * halfSize + u.z * halfSize * (s - offset - 0.5f) * 2.0f + v.z * halfSize * (t - 0.5f) * 2.0f
+                    };
+                    Vector3 rightCubePos = {
+                        normal.x * halfSize + u.x * halfSize * (s + offset - 0.5f) * 2.0f + v.x * halfSize * (t - 0.5f) * 2.0f,
+                        normal.y * halfSize + u.y * halfSize * (s + offset - 0.5f) * 2.0f + v.y * halfSize * (t - 0.5f) * 2.0f,
+                        normal.z * halfSize + u.z * halfSize * (s + offset - 0.5f) * 2.0f + v.z * halfSize * (t - 0.5f) * 2.0f
+                    };
+                    Vector3 downCubePos = {
+                        normal.x * halfSize + u.x * halfSize * (s - 0.5f) * 2.0f + v.x * halfSize * (t - offset - 0.5f) * 2.0f,
+                        normal.y * halfSize + u.y * halfSize * (s - 0.5f) * 2.0f + v.y * halfSize * (t - offset - 0.5f) * 2.0f,
+                        normal.z * halfSize + u.z * halfSize * (s - 0.5f) * 2.0f + v.z * halfSize * (t - offset - 0.5f) * 2.0f
+                    };
+                    Vector3 upCubePos = {
+                        normal.x * halfSize + u.x * halfSize * (s - 0.5f) * 2.0f + v.x * halfSize * (t + offset - 0.5f) * 2.0f,
+                        normal.y * halfSize + u.y * halfSize * (s - 0.5f) * 2.0f + v.y * halfSize * (t + offset - 0.5f) * 2.0f,
+                        normal.z * halfSize + u.z * halfSize * (s - 0.5f) * 2.0f + v.z * halfSize * (t + offset - 0.5f) * 2.0f
+                    };
+                    
+                    // Project neighboring positions to sphere and get terrain heights
+                    Vector3 leftNorm = {leftCubePos.x/halfSize, leftCubePos.y/halfSize, leftCubePos.z/halfSize};
+                    Vector3 rightNorm = {rightCubePos.x/halfSize, rightCubePos.y/halfSize, rightCubePos.z/halfSize};
+                    Vector3 downNorm = {downCubePos.x/halfSize, downCubePos.y/halfSize, downCubePos.z/halfSize};
+                    Vector3 upNorm = {upCubePos.x/halfSize, upCubePos.y/halfSize, upCubePos.z/halfSize};
+                    
+                    Vector3 leftSphere = ProjectCubeToSphere(leftNorm);
+                    Vector3 rightSphere = ProjectCubeToSphere(rightNorm);
+                    Vector3 downSphere = ProjectCubeToSphere(downNorm);
+                    Vector3 upSphere = ProjectCubeToSphere(upNorm);
+                    
+                    // Convert to spherical coordinates and sample heights
+                    float phiL = atan2f(leftSphere.z, leftSphere.x);
+                    float thetaL = asinf(leftSphere.y);
+                    float uL = fmodf((phiL + PI) / (2.0f * PI) + 1.0f, 1.0f);
+                    float vL = fmaxf(0.0f, fminf(1.0f, (thetaL + PI/2.0f) / PI));
+                    
+                    float phiR = atan2f(rightSphere.z, rightSphere.x);
+                    float thetaR = asinf(rightSphere.y);
+                    float uR = fmodf((phiR + PI) / (2.0f * PI) + 1.0f, 1.0f);
+                    float vR = fmaxf(0.0f, fminf(1.0f, (thetaR + PI/2.0f) / PI));
+                    
+                    float phiD = atan2f(downSphere.z, downSphere.x);
+                    float thetaD = asinf(downSphere.y);
+                    float uD = fmodf((phiD + PI) / (2.0f * PI) + 1.0f, 1.0f);
+                    float vD = fmaxf(0.0f, fminf(1.0f, (thetaD + PI/2.0f) / PI));
+                    
+                    float phiU = atan2f(upSphere.z, upSphere.x);
+                    float thetaU = asinf(upSphere.y);
+                    float uU = fmodf((phiU + PI) / (2.0f * PI) + 1.0f, 1.0f);
+                    float vU = fmaxf(0.0f, fminf(1.0f, (thetaU + PI/2.0f) / PI));
+                    
+                    // Sample terrain heights at neighboring positions
+                    float hL = SampleTerrainHeight(terrain, uL, vL) * heightScale * terrain->heightMultiplier;
+                    float hR = SampleTerrainHeight(terrain, uR, vR) * heightScale * terrain->heightMultiplier;
+                    float hD = SampleTerrainHeight(terrain, uD, vD) * heightScale * terrain->heightMultiplier;
+                    float hU = SampleTerrainHeight(terrain, uU, vU) * heightScale * terrain->heightMultiplier;
+                    
+                    // Calculate tangent vectors with terrain displacement
+                    Vector3 tangentU = Vector3Add(Vector3Scale(u, halfSize * 2.0f * offset), 
+                                                 Vector3Scale(normal, hR - hL));
+                    Vector3 tangentV = Vector3Add(Vector3Scale(v, halfSize * 2.0f * offset),
+                                                 Vector3Scale(normal, hU - hD));
+                    
+                    calculatedNormal = Vector3Normalize(Vector3CrossProduct(tangentU, tangentV));
+                }
+                
+                mesh.normals[nCounter++] = calculatedNormal.x;
+                mesh.normals[nCounter++] = calculatedNormal.y;
+                mesh.normals[nCounter++] = calculatedNormal.z;
+                
+                // Texture coordinates
+                mesh.texcoords[tcCounter++] = s;
+                mesh.texcoords[tcCounter++] = t;
+                
+                // Apply terrain-based vertex coloring
+                Color vertexColor;
+                if (terrain && terrain->loaded && maxTerrainHeight > 0.0f) {
+                    vertexColor = GetTerrainColorByHeight(terrainHeight, maxTerrainHeight);
+                } else {
+                    // Default cube coloring if no terrain
+                    Color faceColors[6] = {
+                        {255, 100, 100, 255}, // Red front
+                        {100, 255, 100, 255}, // Green back
+                        {100, 100, 255, 255}, // Blue left
+                        {255, 255, 100, 255}, // Yellow right
+                        {255, 100, 255, 255}, // Magenta top
+                        {100, 255, 255, 255}  // Cyan bottom
+                    };
+                    vertexColor = faceColors[face];
+                }
+                
+                // Apply simple lighting
+                Color litColor = CalculateSimpleLighting(finalPos, calculatedNormal, vertexColor);
+                
+                mesh.colors[cCounter++] = litColor.r;
+                mesh.colors[cCounter++] = litColor.g;
+                mesh.colors[cCounter++] = litColor.b;
+                mesh.colors[cCounter++] = litColor.a;
+            }
+        }
+        
+        // Generate indices for this face
+        for (int j = 0; j < segmentsPerFace; j++) {
+            for (int i = 0; i < segmentsPerFace; i++) {
+                int topLeft = vertexIndex + j * (segmentsPerFace + 1) + i;
+                int topRight = topLeft + 1;
+                int bottomLeft = topLeft + (segmentsPerFace + 1);
+                int bottomRight = bottomLeft + 1;
+                
+                // First triangle
+                mesh.indices[iCounter++] = topLeft;
+                mesh.indices[iCounter++] = bottomLeft;
+                mesh.indices[iCounter++] = topRight;
+                
+                // Second triangle
+                mesh.indices[iCounter++] = topRight;
+                mesh.indices[iCounter++] = bottomLeft;
+                mesh.indices[iCounter++] = bottomRight;
+            }
+        }
+        
+        vertexIndex += verticesPerFace;
+    }
+    
+    UploadMesh(&mesh, false);
+    return mesh;
+}
+
+// Generate cube with terrain displacement that can morph towards a sphere
+Mesh GenMeshTerrainCubeMorphing(float size, int subdivisions, const TerrainData* terrain, float heightScale, float morphFactor) {
+    int segmentsPerFace = subdivisions + 1;
+    int verticesPerFace = (segmentsPerFace + 1) * (segmentsPerFace + 1);
+    int totalVertices = verticesPerFace * 6;
+    int trianglesPerFace = segmentsPerFace * segmentsPerFace * 2;
+    int totalTriangles = trianglesPerFace * 6;
+    
+    Mesh mesh = { 0 };
+    mesh.vertexCount = totalVertices;
+    mesh.triangleCount = totalTriangles;
+    
+    mesh.vertices = (float *)MemAlloc(totalVertices * 3 * sizeof(float));
+    mesh.texcoords = (float *)MemAlloc(totalVertices * 2 * sizeof(float));
+    mesh.normals = (float *)MemAlloc(totalVertices * 3 * sizeof(float));
+    mesh.colors = (unsigned char *)MemAlloc(totalVertices * 4 * sizeof(unsigned char));
+    mesh.indices = (unsigned short *)MemAlloc(totalTriangles * 3 * sizeof(unsigned short));
+    
+    int vCounter = 0;
+    int tcCounter = 0;
+    int nCounter = 0;
+    int cCounter = 0;
+    int iCounter = 0;
+    int vertexIndex = 0;
+    
+    float halfSize = size * 0.5f;
+    float maxTerrainHeight = 0.0f;
+    
+    // Calculate maximum height for color scaling
+    if (terrain && terrain->loaded) {
+        for (int z = 0; z < terrain->size; z++) {
+            for (int x = 0; x < terrain->size; x++) {
+                float height = terrain->heights[z][x] * heightScale * terrain->heightMultiplier;
+                if (height > maxTerrainHeight) {
+                    maxTerrainHeight = height;
+                }
+            }
+        }
+    }
+    
+    // Define face data with proper cube mapping
+    Vector3 faceNormals[6] = {
+        {0, 0, -1},   // Front (+Z)
+        {0, 0, 1},  // Back (-Z)
+        {-1, 0, 0},  // Left (-X)
+        {1, 0, 0},   // Right (+X)
+        {0, 1, 0},   // Top (+Y)
+        {0, -1, 0}   // Bottom (-Y)
+    };
+    
+    Vector3 faceU[6] = {
+        {1, 0, 0}, {-1, 0, 0}, {0, 0, -1}, {0, 0, 1}, {1, 0, 0}, {1, 0, 0}
+    };
+    
+    Vector3 faceV[6] = {
+        {0, 1, 0}, {0, 1, 0}, {0, 1, 0}, {0, 1, 0}, {0, 0, 1}, {0, 0, -1}
+    };
+    
+    // Generate vertices for each face
+    for (int face = 0; face < 6; face++) {
+        Vector3 normal = faceNormals[face];
+        Vector3 u = faceU[face];
+        Vector3 v = faceV[face];
+        
+        for (int j = 0; j <= segmentsPerFace; j++) {
+            for (int i = 0; i <= segmentsPerFace; i++) {
+                float s = (float)i / segmentsPerFace;
+                float t = (float)j / segmentsPerFace;
+                
+                // Calculate base cube vertex position
+                Vector3 cubePos;
+                cubePos.x = normal.x * halfSize + u.x * halfSize * (s - 0.5f) * 2.0f + v.x * halfSize * (t - 0.5f) * 2.0f;
+                cubePos.y = normal.y * halfSize + u.y * halfSize * (s - 0.5f) * 2.0f + v.y * halfSize * (t - 0.5f) * 2.0f;
+                cubePos.z = normal.z * halfSize + u.z * halfSize * (s - 0.5f) * 2.0f + v.z * halfSize * (t - 0.5f) * 2.0f;
+                
+                // Calculate sphere position (for morphing)
+                float length = sqrtf(cubePos.x * cubePos.x + cubePos.y * cubePos.y + cubePos.z * cubePos.z);
+                Vector3 spherePos = {
+                    cubePos.x / length * halfSize,
+                    cubePos.y / length * halfSize,
+                    cubePos.z / length * halfSize
+                };
+                
+                // Interpolate between cube and sphere based on morphFactor
+                Vector3 basePos = {
+                    cubePos.x * (1.0f - morphFactor) + spherePos.x * morphFactor,
+                    cubePos.y * (1.0f - morphFactor) + spherePos.y * morphFactor,
+                    cubePos.z * (1.0f - morphFactor) + spherePos.z * morphFactor
+                };
+                
+                // Sample terrain height for displacement
+                float terrainHeight = 0.0f;
+                if (terrain && terrain->loaded) {
+                    // Use cube-to-sphere projection for seamless UV mapping
+                    Vector3 normalizedPos = {
+                        cubePos.x / halfSize,
+                        cubePos.y / halfSize,
+                        cubePos.z / halfSize
+                    };
+                    
+                    Vector3 sphereUV = ProjectCubeToSphere(normalizedPos);
+                    
+                    // Convert sphere coordinates to spherical UV coordinates
+                    float phi = atan2f(sphereUV.z, sphereUV.x);
+                    float theta = asinf(sphereUV.y);
+                    
+                    float terrainU = fmodf((phi + PI) / (2.0f * PI) + 1.0f, 1.0f);
+                    float terrainV = fmaxf(0.0f, fminf(1.0f, (theta + PI/2.0f) / PI));
+                    
+                    terrainHeight = SampleTerrainHeight(terrain, terrainU, terrainV) * heightScale * terrain->heightMultiplier;
+                }
+                
+                // Calculate normal for displacement direction
+                Vector3 displacementNormal = {
+                    normal.x * (1.0f - morphFactor) + (basePos.x / halfSize) * morphFactor,
+                    normal.y * (1.0f - morphFactor) + (basePos.y / halfSize) * morphFactor,
+                    normal.z * (1.0f - morphFactor) + (basePos.z / halfSize) * morphFactor
+                };
+                float normalLength = sqrtf(displacementNormal.x * displacementNormal.x + 
+                                         displacementNormal.y * displacementNormal.y + 
+                                         displacementNormal.z * displacementNormal.z);
+                if (normalLength > 0.001f) {
+                    displacementNormal.x /= normalLength;
+                    displacementNormal.y /= normalLength;
+                    displacementNormal.z /= normalLength;
+                }
+                
+                // Apply terrain displacement along normal
+                Vector3 displacement = Vector3Scale(displacementNormal, terrainHeight);
+                Vector3 finalPos = Vector3Add(basePos, displacement);
+                
+                mesh.vertices[vCounter++] = finalPos.x;
+                mesh.vertices[vCounter++] = finalPos.y;
+                mesh.vertices[vCounter++] = finalPos.z;
+                
+                // Use displacement normal as vertex normal
+                mesh.normals[nCounter++] = displacementNormal.x;
+                mesh.normals[nCounter++] = displacementNormal.y;
+                mesh.normals[nCounter++] = displacementNormal.z;
+                
+                // Texture coordinates
+                mesh.texcoords[tcCounter++] = s;
+                mesh.texcoords[tcCounter++] = t;
+                
+                // Apply terrain-based vertex coloring
+                Color vertexColor;
+                if (terrain && terrain->loaded && maxTerrainHeight > 0.0f) {
+                    vertexColor = GetTerrainColorByHeight(terrainHeight, maxTerrainHeight);
+                } else {
+                    // Default cube coloring if no terrain
+                    Color faceColors[6] = {
+                        {255, 100, 100, 255}, // Red front
+                        {100, 255, 100, 255}, // Green back
+                        {100, 100, 255, 255}, // Blue left
+                        {255, 255, 100, 255}, // Yellow right
+                        {255, 100, 255, 255}, // Magenta top
+                        {100, 255, 255, 255}  // Cyan bottom
+                    };
+                    vertexColor = faceColors[face];
+                }
+                
+                // Apply simple lighting
+                Color litColor = CalculateSimpleLighting(finalPos, displacementNormal, vertexColor);
                 
                 mesh.colors[cCounter++] = litColor.r;
                 mesh.colors[cCounter++] = litColor.g;

@@ -31,4 +31,10 @@ int CalculateSubdivisionLevel(Vector3 sphereCenter, Vector3 cameraPosition, floa
 // Generate a subdivided cube that can morph towards a sphere
 Mesh GenMeshSubdividedCube(float size, int subdivisions, float morphFactor);
 
+// Generate cube with terrain height map displacement on each face
+Mesh GenMeshTerrainCube(float size, int subdivisions, const TerrainData* terrain, float heightScale);
+
+// Generate cube with terrain displacement that can morph towards a sphere
+Mesh GenMeshTerrainCubeMorphing(float size, int subdivisions, const TerrainData* terrain, float heightScale, float morphFactor);
+
 #endif // MESH_GENERATION_H
