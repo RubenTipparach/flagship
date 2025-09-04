@@ -79,10 +79,27 @@ typedef struct {
     bool needsRebuild;       // Flag to rebuild mesh
 } TerrainData;
 
+// Cube-Sphere data structure
+#define MAX_SPHERE_SUBDIVISIONS 8
+typedef struct {
+    Mesh sphereMesh;
+    Model sphereModel;
+    bool loaded;
+    int subdivisionLevel;
+    float radius;
+    Vector3 center;
+    bool needsRebuild;
+    float lastCameraDistance;
+    int dynamicSubdivisions;
+    float morphFactor; // 0.0 = cube, 1.0 = sphere
+    bool wireframeMode; // Toggle between solid and wireframe rendering
+} CubeSphereData;
+
 // Scene types
 typedef enum {
     SCENE_MAZE,
-    SCENE_TERRAIN
+    SCENE_TERRAIN,
+    SCENE_CUBE_SPHERE
 } SceneType;
 
 // Forward declarations

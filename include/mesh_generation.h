@@ -22,4 +22,13 @@ Mesh GenMeshMazeWallCube(float size, const LightingSystem* lighting, const Graph
 // Generate terrain mesh from height map with vertex colors based on height
 Mesh GenMeshTerrainFromHeightMap(const TerrainData* terrain, float scale, float heightScale);
 
+// Generate a cube projected to sphere with dynamic tessellation
+Mesh GenMeshCubeSphere(float radius, int subdivisions, Vector3 center);
+
+// Calculate subdivision level based on camera distance
+int CalculateSubdivisionLevel(Vector3 sphereCenter, Vector3 cameraPosition, float radius, int maxSubdivisions);
+
+// Generate a subdivided cube that can morph towards a sphere
+Mesh GenMeshSubdividedCube(float size, int subdivisions, float morphFactor);
+
 #endif // MESH_GENERATION_H

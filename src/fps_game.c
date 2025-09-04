@@ -79,9 +79,11 @@ int main(void)
     // Create and add scenes
     Scene mazeScene = CreateMazeScene();
     Scene terrainScene = CreateTerrainScene();
+    Scene cubeSphereScene = CreateCubeSphereScene();
     
     AddScene(&sceneManager, mazeScene);
     AddScene(&sceneManager, terrainScene);
+    AddScene(&sceneManager, cubeSphereScene);
     
     // Start with maze scene
     SwitchScene(&sceneManager, 0);
@@ -132,6 +134,14 @@ int main(void)
         if (IsKeyPressed(KEY_TWO))
         {
             SwitchScene(&sceneManager, 1);
+            if (sceneManager.currentScene && sceneManager.currentScene->init) {
+                sceneManager.currentScene->init(sceneManager.currentScene, &lighting, &gfxConfig);
+            }
+        }
+        
+        if (IsKeyPressed(KEY_THREE))
+        {
+            SwitchScene(&sceneManager, 2);
             if (sceneManager.currentScene && sceneManager.currentScene->init) {
                 sceneManager.currentScene->init(sceneManager.currentScene, &lighting, &gfxConfig);
             }

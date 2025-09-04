@@ -5,7 +5,10 @@
       "Bash(./fps_game.exe)",
       "Bash(gcc:*)",
       "Bash(timeout:*)",
-      "Bash(tasklist)"
+      "Bash(tasklist)",
+      "Bash(./fps_game)",
+      "Bash(./test_morph)",
+      "Bash(./test_wireframe)"
     ],
     "deny": [],
     "ask": []

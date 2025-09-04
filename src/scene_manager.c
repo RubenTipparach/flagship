@@ -20,6 +20,11 @@ typedef struct {
     Model floorModel;
 } TerrainSceneData;
 
+// Cube-Sphere scene specific data
+typedef struct {
+    CubeSphereData cubeSphere;
+} CubeSphereSceneData;
+
 // Scene manager functions
 SceneManager InitSceneManager(void) {
     SceneManager manager = {0};
@@ -308,6 +313,136 @@ Scene CreateTerrainScene(void) {
     scene.update = UpdateTerrainScene;
     scene.render = RenderTerrainScene;
     scene.cleanup = CleanupTerrainScene;
+    
+    return scene;
+}
+
+// Cube-Sphere scene functions
+void InitCubeSphereScene(Scene* scene, LightingSystem* lighting, GraphicsConfig* gfxConfig) {
+    CubeSphereSceneData* data = (CubeSphereSceneData*)malloc(sizeof(CubeSphereSceneData));
+    scene->sceneData = data;
+    
+    // Initialize cube-sphere data
+    data->cubeSphere.radius = 50.0f;
+    data->cubeSphere.center = (Vector3){0.0f, 0.0f, 0.0f};
+    data->cubeSphere.subdivisionLevel = 8; // Higher subdivision for smoother morphing
+    data->cubeSphere.dynamicSubdivisions = 8;
+    data->cubeSphere.lastCameraDistance = 0.0f;
+    data->cubeSphere.needsRebuild = true;
+    data->cubeSphere.loaded = false;
+    data->cubeSphere.morphFactor = 0.0f; // Start as a cube
+    data->cubeSphere.wireframeMode = false; // Start in solid mode
+    
+    // Generate initial mesh using the new morphing function
+    Mesh sphereMesh = GenMeshSubdividedCube(data->cubeSphere.radius, data->cubeSphere.subdivisionLevel, data->cubeSphere.morphFactor);
+    data->cubeSphere.sphereModel = LoadModelFromMesh(sphereMesh);
+    data->cubeSphere.sphereMesh = sphereMesh;
+    data->cubeSphere.loaded = true;
+    data->cubeSphere.needsRebuild = false;
+    
+    scene->initialized = true;
+    printf("Initialized Cube-Sphere scene with radius %.1f and subdivision level %d\n", 
+           data->cubeSphere.radius, data->cubeSphere.subdivisionLevel);
+}
+
+void UpdateCubeSphereScene(Scene* scene, float deltaTime, Camera3D* camera) {
+    CubeSphereSceneData* data = (CubeSphereSceneData*)scene->sceneData;
+    
+    bool morphChanged = false;
+    
+    // Handle morphing controls
+    if (IsKeyPressed(KEY_EQUAL) || IsKeyPressed(KEY_KP_ADD)) {  // + key
+        data->cubeSphere.morphFactor += 0.1f;
+        if (data->cubeSphere.morphFactor > 1.0f) data->cubeSphere.morphFactor = 1.0f;
+        morphChanged = true;
+        printf("Morph factor: %.1f\n", data->cubeSphere.morphFactor);
+    }
+    
+    if (IsKeyPressed(KEY_MINUS) || IsKeyPressed(KEY_KP_SUBTRACT)) {  // - key
+        data->cubeSphere.morphFactor -= 0.1f;
+        if (data->cubeSphere.morphFactor < 0.0f) data->cubeSphere.morphFactor = 0.0f;
+        morphChanged = true;
+        printf("Morph factor: %.1f\n", data->cubeSphere.morphFactor);
+    }
+    
+    // Handle wireframe toggle
+    if (IsKeyPressed(KEY_W)) {
+        data->cubeSphere.wireframeMode = !data->cubeSphere.wireframeMode;
+        printf("Wireframe mode: %s\n", data->cubeSphere.wireframeMode ? "ON" : "OFF");
+    }
+    
+    // Rebuild mesh if morph factor changed
+    if (morphChanged && data->cubeSphere.loaded) {
+        // Unload old model
+        if (data->cubeSphere.sphereModel.meshCount > 0) {
+            UnloadModel(data->cubeSphere.sphereModel);
+        }
+        
+        // Generate new mesh with current morph factor
+        Mesh newSphereMesh = GenMeshSubdividedCube(data->cubeSphere.radius, data->cubeSphere.subdivisionLevel, 
+                                                 data->cubeSphere.morphFactor);
+        data->cubeSphere.sphereModel = LoadModelFromMesh(newSphereMesh);
+        data->cubeSphere.sphereMesh = newSphereMesh;
+        data->cubeSphere.needsRebuild = false;
+        
+        printf("Rebuilt morphing mesh with factor %.1f (%d vertices)\n", 
+               data->cubeSphere.morphFactor, newSphereMesh.vertexCount);
+    }
+}
+
+void RenderCubeSphereScene(Scene* scene, Camera3D camera, GraphicsConfig* gfxConfig) {
+    CubeSphereSceneData* data = (CubeSphereSceneData*)scene->sceneData;
+    
+    if (!data->cubeSphere.loaded) return;
+    
+    if (data->cubeSphere.wireframeMode) {
+        // Draw only wireframe
+        DrawCubeSphereWires(data->cubeSphere.center, data->cubeSphere.radius, 
+                           data->cubeSphere.subdivisionLevel, LIME, gfxConfig);
+    } else {
+        // Draw solid model with optional wireframe overlay
+        DrawModel(data->cubeSphere.sphereModel, data->cubeSphere.center, 1.0f, WHITE);
+        
+        // Optionally draw a subtle wireframe overlay
+        DrawCubeSphereWires(data->cubeSphere.center, data->cubeSphere.radius, 
+                           data->cubeSphere.subdivisionLevel, (Color){100, 255, 100, 80}, gfxConfig);
+    }
+    
+    // Draw some reference objects to show scale
+    DrawCube((Vector3){data->cubeSphere.radius + 20.0f, 0, 0}, 5, 5, 5, RED);
+    DrawCube((Vector3){0, data->cubeSphere.radius + 20.0f, 0}, 5, 5, 5, GREEN);
+    DrawCube((Vector3){0, 0, data->cubeSphere.radius + 20.0f}, 5, 5, 5, BLUE);
+    
+    // Draw UI info
+    DrawText(TextFormat("Morph Factor: %.1f (0=Cube, 1=Sphere)", data->cubeSphere.morphFactor), 10, 10, 20, WHITE);
+    DrawText(TextFormat("Wireframe Mode: %s", data->cubeSphere.wireframeMode ? "ON" : "OFF"), 10, 35, 20, WHITE);
+    DrawText(TextFormat("Subdivision Level: %d", data->cubeSphere.subdivisionLevel), 10, 60, 20, WHITE);
+    DrawText(TextFormat("Vertices: %d", data->cubeSphere.sphereMesh.vertexCount), 10, 85, 20, WHITE);
+    DrawText("Press +/- keys to morph, W to toggle wireframe", 10, 110, 20, YELLOW);
+}
+
+void CleanupCubeSphereScene(Scene* scene) {
+    if (scene->sceneData) {
+        CubeSphereSceneData* data = (CubeSphereSceneData*)scene->sceneData;
+        if (data->cubeSphere.loaded && data->cubeSphere.sphereModel.meshCount > 0) {
+            UnloadModel(data->cubeSphere.sphereModel);
+        }
+        free(data);
+        scene->sceneData = NULL;
+    }
+}
+
+Scene CreateCubeSphereScene(void) {
+    Scene scene = {0};
+    scene.type = SCENE_CUBE_SPHERE;
+    strcpy(scene.name, "Cube-Sphere Scene");
+    scene.initialized = false;
+    scene.sceneData = NULL;
+    
+    scene.init = InitCubeSphereScene;
+    scene.update = UpdateCubeSphereScene;
+    scene.render = RenderCubeSphereScene;
+    scene.cleanup = CleanupCubeSphereScene;
     
     return scene;
 }

@@ -15,5 +15,6 @@ void CleanupSceneManager(SceneManager* manager);
 // Scene creation functions
 Scene CreateMazeScene(void);
 Scene CreateTerrainScene(void);
+Scene CreateCubeSphereScene(void);
 
 #endif // SCENE_MANAGER_H
