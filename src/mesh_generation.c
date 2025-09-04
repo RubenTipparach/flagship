@@ -519,8 +519,8 @@ Mesh GenMeshSubdividedCube(float size, int subdivisions, float morphFactor) {
     
     // Define the 6 cube faces
     Vector3 faceNormals[6] = {
-        {0, 0, 1},   // Front (+Z)
-        {0, 0, -1},  // Back (-Z)
+        {0, 0, -1},   // Front (+Z)
+        {0, 0, 1},  // Back (-Z)
         {-1, 0, 0},  // Left (-X)
         {1, 0, 0},   // Right (+X)
         {0, 1, 0},   // Top (+Y)
