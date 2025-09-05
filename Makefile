@@ -62,4 +62,15 @@ generate-heightmap: heightmap-tool
 	@mv tools/heightmap.png ./heightmap.png
 	@echo "Height map generated and ready for use!"
 
-.PHONY: all gles clean run setup heightmap-tool generate-heightmap
+# Build simple planet scene
+planet_scene: planet_scene.c raylib/src/libraylib.a
+	@echo "Building simple planet scene..."
+	@$(CC) $(CFLAGS) $(INCLUDES) -o planet_scene planet_scene.c $(LIBS_GL) 2>/dev/null || \
+	(echo "OpenGL failed, trying OpenGL ES..." && \
+	 $(CC) $(CFLAGS) $(INCLUDES) -DGRAPHICS_API_OPENGL_ES2 -o planet_scene planet_scene.c $(LIBS_GLES))
+
+# Build and run planet scene
+run-planet: planet_scene
+	./planet_scene
+
+.PHONY: all gles clean run setup heightmap-tool generate-heightmap planet_scene run-planet

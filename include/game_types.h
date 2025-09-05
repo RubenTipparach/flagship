@@ -56,6 +56,8 @@ typedef struct {
     bool normalMappingEnabled;
     float specularStrength;
     float shininess;
+    bool wireframeShaderEnabled;    // Toggle for wireframe shader mode
+    Color wireframeColor;           // Color for wireframe lines
 } GraphicsConfig;
 
 // Maze data structure
@@ -93,6 +95,9 @@ typedef struct {
     int dynamicSubdivisions;
     float morphFactor; // 0.0 = cube, 1.0 = sphere
     bool wireframeMode; // Toggle between solid and wireframe rendering
+    Shader planetShader; // Wireframe shader for planet rendering
+    bool shaderLoaded; // Whether planet shader is loaded
+    int wireframeModeLocation; // Uniform location for wireframe mode
 } CubeSphereData;
 
 // Scene types
@@ -104,11 +109,12 @@ typedef enum {
 
 // Forward declarations
 typedef struct Scene Scene;
+struct WireframeShader;
 
 // Scene function pointers
 typedef void (*SceneInitFunc)(Scene* scene, LightingSystem* lighting, GraphicsConfig* gfxConfig);
 typedef void (*SceneUpdateFunc)(Scene* scene, float deltaTime, Camera3D* camera);
-typedef void (*SceneRenderFunc)(Scene* scene, Camera3D camera, GraphicsConfig* gfxConfig);
+typedef void (*SceneRenderFunc)(Scene* scene, Camera3D camera, GraphicsConfig* gfxConfig, struct WireframeShader* wireframeShader);
 typedef void (*SceneCleanupFunc)(Scene* scene);
 
 // Scene structure

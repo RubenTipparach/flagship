@@ -9,7 +9,7 @@ SceneManager InitSceneManager(void);
 void AddScene(SceneManager* manager, Scene scene);
 void SwitchScene(SceneManager* manager, int sceneIndex);
 void UpdateCurrentScene(SceneManager* manager, float deltaTime, Camera3D* camera);
-void RenderCurrentScene(SceneManager* manager, Camera3D camera, GraphicsConfig* gfxConfig);
+void RenderCurrentScene(SceneManager* manager, Camera3D camera, GraphicsConfig* gfxConfig, struct WireframeShader* wireframeShader);
 void CleanupSceneManager(SceneManager* manager);
 
 // Scene creation functions

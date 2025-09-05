@@ -26,6 +26,8 @@ int main(void)
     gfxConfig.normalMappingEnabled = false;
     gfxConfig.specularStrength = 0.5f;
     gfxConfig.shininess = 32.0f;
+    gfxConfig.wireframeShaderEnabled = false;
+    gfxConfig.wireframeColor = WHITE;
     
     // Initialize lighting system
     LightingSystem lighting = InitLightingSystem();
@@ -101,6 +103,9 @@ int main(void)
     Vector3 initialDir = Vector3Normalize(Vector3Subtract(camera.target, camera.position));
     float yaw = atan2f(initialDir.x, initialDir.z);
     float pitch = asinf(initialDir.y);
+    
+    // Initialize wireframe shader
+    WireframeShader wireframeShader = LoadWireframeShader();
     
     SetTargetFPS(60);
     
@@ -181,6 +186,13 @@ int main(void)
             TraceLog(LOG_INFO, "Specular Strength: %.1f", gfxConfig.specularStrength);
         }
         
+        if (IsKeyPressed(KEY_F6))
+        {
+            gfxConfig.wireframeShaderEnabled = !gfxConfig.wireframeShaderEnabled;
+            printf("F6 PRESSED: Wireframe Shader: %s\n", gfxConfig.wireframeShaderEnabled ? "ON" : "OFF");
+            TraceLog(LOG_INFO, "Wireframe Shader: %s", gfxConfig.wireframeShaderEnabled ? "ON" : "OFF");
+        }
+        
         // Update lighting system
         UpdateLightingSystem(&lighting, deltaTime);
         
@@ -250,7 +262,7 @@ int main(void)
         DrawLights(&lighting);
         
         // Render current scene
-        RenderCurrentScene(&sceneManager, camera, &gfxConfig);
+        RenderCurrentScene(&sceneManager, camera, &gfxConfig, &wireframeShader);
         
         DrawGrid(100, 1.0f);
         
@@ -265,7 +277,7 @@ int main(void)
         
         DrawText("1: Maze Scene, 2: Terrain Scene", 10, 70, 16, DARKGRAY);
         DrawText("+/-: Terrain Height (in Terrain Scene)", 10, 90, 16, DARKGRAY);
-        DrawText("F1: AA, F2: Wireframe, F3: Quality, F4: Shading, F5: Specular", 10, 110, 14, DARKGRAY);
+        DrawText("F1: AA, F2: Wireframe, F3: Quality, F4: Shading, F5: Specular, F6: Wireframe Shader", 10, 110, 12, DARKGRAY);
         
         // Display current scene
         if (sceneManager.currentScene) {
@@ -285,10 +297,11 @@ int main(void)
             camera.target.x, camera.target.y, camera.target.z);
         DrawText(debugText, 10, 170, 16, DARKGREEN);
         
-        sprintf(debugText, "Graphics: AA:%s Shading:%s Specular:%.1f Lights:%d", 
+        sprintf(debugText, "Graphics: AA:%s Shading:%s Specular:%.1f WireShader:%s Lights:%d", 
             gfxConfig.antialiasingEnabled ? "ON" : "OFF",
             gfxConfig.advancedShadingEnabled ? "ADV" : "SIM",
             gfxConfig.specularStrength,
+            gfxConfig.wireframeShaderEnabled ? "ON" : "OFF",
             lighting.lightCount);
         DrawText(debugText, 10, 190, 16, DARKGREEN);
         
@@ -303,6 +316,9 @@ int main(void)
     
     // Cleanup scene manager (this will cleanup all scene resources)
     CleanupSceneManager(&sceneManager);
+    
+    // Cleanup wireframe shader
+    UnloadWireframeShader(&wireframeShader);
     
     CloseWindow();
     

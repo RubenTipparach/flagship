@@ -1,6 +1,7 @@
 #include "scene_manager.h"
 #include "maze.h"
 #include "mesh_generation.h"
+#include "rendering.h"
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
@@ -62,9 +63,9 @@ void UpdateCurrentScene(SceneManager* manager, float deltaTime, Camera3D* camera
     }
 }
 
-void RenderCurrentScene(SceneManager* manager, Camera3D camera, GraphicsConfig* gfxConfig) {
+void RenderCurrentScene(SceneManager* manager, Camera3D camera, GraphicsConfig* gfxConfig, struct WireframeShader* wireframeShader) {
     if (manager->currentScene && manager->currentScene->render) {
-        manager->currentScene->render(manager->currentScene, camera, gfxConfig);
+        manager->currentScene->render(manager->currentScene, camera, gfxConfig, wireframeShader);
     }
 }
 
@@ -102,7 +103,7 @@ void UpdateMazeScene(Scene* scene, float deltaTime, Camera3D* camera) {
     // Maze scene doesn't need much updating
 }
 
-void RenderMazeScene(Scene* scene, Camera3D camera, GraphicsConfig* gfxConfig) {
+void RenderMazeScene(Scene* scene, Camera3D camera, GraphicsConfig* gfxConfig, struct WireframeShader* wireframeShader) {
     MazeSceneData* data = (MazeSceneData*)scene->sceneData;
     
     // Draw floor
@@ -256,7 +257,7 @@ void UpdateTerrainScene(Scene* scene, float deltaTime, Camera3D* camera) {
     }
 }
 
-void RenderTerrainScene(Scene* scene, Camera3D camera, GraphicsConfig* gfxConfig) {
+void RenderTerrainScene(Scene* scene, Camera3D camera, GraphicsConfig* gfxConfig, struct WireframeShader* wireframeShader) {
     TerrainSceneData* data = (TerrainSceneData*)scene->sceneData;
     
     // Draw terrain or fallback floor
@@ -385,19 +386,37 @@ void InitCubeSphereScene(Scene* scene, LightingSystem* lighting, GraphicsConfig*
     data->cubeSphere.lastCameraDistance = 0.0f;
     data->cubeSphere.needsRebuild = true;
     data->cubeSphere.loaded = false;
-    data->cubeSphere.morphFactor = 0.0f; // Start as a cube
+    data->cubeSphere.morphFactor = 1.0f; // Start as a sphere (planet)
     data->cubeSphere.wireframeMode = false; // Start in solid mode
+    
+    // Load planet wireframe shader
+    data->cubeSphere.planetShader = LoadShader("planet.vs", "planet.fs");
+    if (data->cubeSphere.planetShader.id != rlGetShaderIdDefault()) {
+        data->cubeSphere.shaderLoaded = true;
+        data->cubeSphere.wireframeModeLocation = GetShaderLocation(data->cubeSphere.planetShader, "wireframeMode");
+        printf("Planet shader loaded for scene 3! Wireframe location: %d\n", data->cubeSphere.wireframeModeLocation);
+    } else {
+        data->cubeSphere.shaderLoaded = false;
+        printf("Failed to load planet shader for scene 3!\n");
+    }
     
     // Generate initial mesh using terrain cube with morphing function
     float heightScale = 0.5f; // Scale for terrain displacement
     Mesh terrainCubeMesh = GenMeshTerrainCubeMorphing(data->cubeSphere.radius, data->cubeSphere.subdivisionLevel, &data->terrain, heightScale, data->cubeSphere.morphFactor);
     data->cubeSphere.sphereModel = LoadModelFromMesh(terrainCubeMesh);
     data->cubeSphere.sphereMesh = terrainCubeMesh;
+    
+    // Apply planet shader to the model if loaded
+    if (data->cubeSphere.shaderLoaded) {
+        data->cubeSphere.sphereModel.materials[0].shader = data->cubeSphere.planetShader;
+        printf("Planet shader applied to scene 3 model!\n");
+    }
+    
     data->cubeSphere.loaded = true;
     data->cubeSphere.needsRebuild = false;
     
     scene->initialized = true;
-    printf("Initialized Terrain Cube scene with radius %.1f and subdivision level %d\n", 
+    printf("Initialized Planet Generation scene with radius %.1f and subdivision level %d\n", 
            data->cubeSphere.radius, data->cubeSphere.subdivisionLevel);
     printf("Terrain loaded: %s, vertices: %d\n", data->terrain.loaded ? "YES" : "NO", terrainCubeMesh.vertexCount);
 }
@@ -421,6 +440,12 @@ void UpdateCubeSphereScene(Scene* scene, float deltaTime, Camera3D* camera) {
         if (data->cubeSphere.morphFactor < 0.0f) data->cubeSphere.morphFactor = 0.0f;
         morphChanged = true;
         printf("Sphere morph factor: %.1f (0=Cube, 1=Sphere)\n", data->cubeSphere.morphFactor);
+    }
+    
+    // Handle wireframe mode toggle with F6 key
+    if (IsKeyPressed(KEY_F6)) {
+        data->cubeSphere.wireframeMode = !data->cubeSphere.wireframeMode;
+        printf("Wireframe mode: %s\n", data->cubeSphere.wireframeMode ? "ON" : "OFF");
     }
     
     // Handle terrain height adjustment with 0/9 keys
@@ -454,38 +479,45 @@ void UpdateCubeSphereScene(Scene* scene, float deltaTime, Camera3D* camera) {
                                                             &data->terrain, heightScale, data->cubeSphere.morphFactor);
         data->cubeSphere.sphereModel = LoadModelFromMesh(newTerrainCubeMesh);
         data->cubeSphere.sphereMesh = newTerrainCubeMesh;
+        
+        // Reapply planet shader after rebuilding
+        if (data->cubeSphere.shaderLoaded) {
+            data->cubeSphere.sphereModel.materials[0].shader = data->cubeSphere.planetShader;
+        }
+        
         data->cubeSphere.needsRebuild = false;
         
-        printf("Rebuilt terrain cube with height multiplier %.1f (%d vertices)\n", 
+        printf("Rebuilt planet with height multiplier %.1f (%d vertices)\n", 
                data->terrain.heightMultiplier, newTerrainCubeMesh.vertexCount);
     }
 }
 
-void RenderCubeSphereScene(Scene* scene, Camera3D camera, GraphicsConfig* gfxConfig) {
+void RenderCubeSphereScene(Scene* scene, Camera3D camera, GraphicsConfig* gfxConfig, struct WireframeShader* wireframeShader) {
     CubeSphereSceneData* data = (CubeSphereSceneData*)scene->sceneData;
     
     if (!data->cubeSphere.loaded) return;
     
-    // Draw solid terrain cube model
-    DrawModel(data->cubeSphere.sphereModel, data->cubeSphere.center, 1.0f, WHITE);
-    
-    // Always draw wireframe overlay on top
-    if (gfxConfig->wireframeThickness > 0.0f) {
-        DrawCubeSphereWires(data->cubeSphere.center, data->cubeSphere.radius, 
-                           data->cubeSphere.subdivisionLevel, (Color){255, 255, 255, 60}, gfxConfig);
+    // Draw planet geometry with wireframe shader
+    if (data->cubeSphere.shaderLoaded) {
+        // Set wireframe mode based on toggle state
+        float wireframeValue = data->cubeSphere.wireframeMode ? 1.0f : 0.0f;
+        SetShaderValue(data->cubeSphere.planetShader, data->cubeSphere.wireframeModeLocation, &wireframeValue, SHADER_UNIFORM_FLOAT);
     }
+    
+    // Draw the planet model (shader is already assigned to the model material)
+    DrawModel(data->cubeSphere.sphereModel, data->cubeSphere.center, 1.0f, WHITE);
     
     // Draw some reference objects to show scale
     DrawCube((Vector3){data->cubeSphere.radius + 20.0f, 0, 0}, 5, 5, 5, RED);
     DrawCube((Vector3){0, data->cubeSphere.radius + 20.0f, 0}, 5, 5, 5, GREEN);
     DrawCube((Vector3){0, 0, data->cubeSphere.radius + 20.0f}, 5, 5, 5, BLUE);
     
-    // Draw UI info for terrain cube
-    DrawText(TextFormat("Terrain Cube - Height: %.1f, Morph: %.1f", data->terrain.heightMultiplier, data->cubeSphere.morphFactor), 10, 10, 20, WHITE);
+    // Draw UI info for planet generation
+    DrawText(TextFormat("Planet Generation - Height: %.1f, Sphere: %.1f", data->terrain.heightMultiplier, data->cubeSphere.morphFactor), 10, 10, 20, WHITE);
     DrawText(TextFormat("Subdivision Level: %d", data->cubeSphere.subdivisionLevel), 10, 35, 20, WHITE);
     DrawText(TextFormat("Vertices: %d", data->cubeSphere.sphereMesh.vertexCount), 10, 60, 20, WHITE);
     DrawText(TextFormat("Terrain Loaded: %s", data->terrain.loaded ? "YES" : "NO"), 10, 85, 20, WHITE);
-    DrawText("Press +/- for sphere morph, 0/9 for terrain height", 10, 110, 20, YELLOW);
+    DrawText("Press +/- for sphere morph, 0/9 for terrain height, F6 for wireframe", 10, 110, 20, YELLOW);
     DrawText("Terrain colors: Blue=Water, Tan=Beach, Green=Grass, Brown=Mountain, White=Snow", 10, 135, 18, LIGHTGRAY);
 }
 
@@ -494,6 +526,9 @@ void CleanupCubeSphereScene(Scene* scene) {
         CubeSphereSceneData* data = (CubeSphereSceneData*)scene->sceneData;
         if (data->cubeSphere.loaded && data->cubeSphere.sphereModel.meshCount > 0) {
             UnloadModel(data->cubeSphere.sphereModel);
+        }
+        if (data->cubeSphere.shaderLoaded) {
+            UnloadShader(data->cubeSphere.planetShader);
         }
         if (data->terrain.loaded && data->terrain.heightTexture.id > 0) {
             UnloadTexture(data->terrain.heightTexture);
@@ -506,7 +541,7 @@ void CleanupCubeSphereScene(Scene* scene) {
 Scene CreateCubeSphereScene(void) {
     Scene scene = {0};
     scene.type = SCENE_CUBE_SPHERE;
-    strcpy(scene.name, "Terrain Cube Scene");
+    strcpy(scene.name, "Planet Generation Scene");
     scene.initialized = false;
     scene.sceneData = NULL;
     

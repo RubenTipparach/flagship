@@ -8,7 +8,8 @@
       "Bash(tasklist)",
       "Bash(./fps_game)",
       "Bash(./test_morph)",
-      "Bash(./test_wireframe)"
+      "Bash(./test_wireframe)",
+      "Bash(./planet_scene)"
     ],
     "deny": [],
     "ask": []
